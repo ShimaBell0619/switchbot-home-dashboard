@@ -1,0 +1,16 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    uses: ShimaBell0619/web-app-foundation/.github/workflows/web-ci.yml@007352e15fcc6f9620686d3b77e11e85341eac02
+    with:
+      node_version_file: .node-version
+      cache_dependency_path: package-lock.json
