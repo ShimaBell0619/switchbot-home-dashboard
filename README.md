@@ -23,8 +23,11 @@ Requirements:
 
 ```bash
 npm ci
+cp .env.example .env.local
 npm run dev
 ```
+
+`AZURE_FUNCTIONS_BASE_URL` is a server-side Next.js setting. Do not use a `NEXT_PUBLIC_` variable for backend or SwitchBot credentials.
 
 Quality gate:
 
@@ -34,6 +37,38 @@ npm run typecheck
 npm run test
 npm run build
 ```
+
+Azure IaC is validated separately by `.github/workflows/infra-ci.yml`.
+
+## Azure PoC deployment
+
+Azure resources are defined in `infra/main.bicep`. The initial PoC creates only:
+
+- one Standard_LRS Storage Account;
+- `CurrentState` and `SensorReadings` tables;
+- one private deployment blob container;
+- one Azure Functions Flex Consumption plan and Function App.
+
+The privileged deployment workflow is intentionally not runnable from PR code. After the workflow exists on `main`, the repository owner can comment exactly `/deploy-azure` on Issue #3. The trusted `main` workflow signs in to Azure with GitHub OIDC, deploys the Bicep template, deploys the Functions package, and smoke-tests `/api/latest`.
+
+The workflow expects repository Variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`. It does not use an Azure client secret.
+
+SwitchBot credentials are deliberately not managed by Bicep or GitHub Actions. After Azure deployment, configure these Function App settings directly in Azure:
+
+- `SWITCHBOT_TOKEN`
+- `SWITCHBOT_SECRET`
+- `SWITCHBOT_DEVICE_ID`
+
+Do not commit or paste those values into repository files. The deployment workflow preserves these existing server-side settings across later Bicep redeployments.
+
+After Azure is ready, set the Vercel server-side environment variable `AZURE_FUNCTIONS_BASE_URL` to the deployed Function App base URL. The web application then reads only the application-owned latest/history API.
+
+## PoC API
+
+- `GET /api/latest` returns the latest stored reading and freshness metadata.
+- `GET /api/history?window=1h|6h|24h` returns a bounded recent history window. The default is `24h` and storage reads are capped at 288 rows.
+
+Before SwitchBot settings are configured, `/api/latest` intentionally returns `503 not_configured`. After configuration but before the first successful collection it returns `404 no_data`. Storage/read failures are returned separately and are never represented as zero/default sensor values.
 
 ## Foundation
 
