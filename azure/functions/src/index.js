@@ -3,31 +3,54 @@ const collector = require("../collectSensor");
 const history = require("../history");
 const latest = require("../latest");
 
+function legacyContext(context) {
+  return {
+    log: context.log,
+    res: undefined,
+  };
+}
+
+async function collectSensorHandler(_timer, context) {
+  return collector(context);
+}
+
+async function latestHandler(request, context) {
+  const handlerContext = legacyContext(context);
+  await latest(handlerContext, request);
+  return handlerContext.res;
+}
+
+async function historyHandler(request, context) {
+  const handlerContext = legacyContext(context);
+  await history(handlerContext, {
+    query: { window: request.query.get("window") ?? undefined },
+  });
+  return handlerContext.res;
+}
+
 app.timer("collectSensor", {
   schedule: "0 */5 * * * *",
   runOnStartup: false,
   useMonitor: true,
-  handler: async (_timer, context) => collector(context),
+  handler: collectSensorHandler,
 });
 
 app.http("latest", {
   methods: ["GET"],
   authLevel: "anonymous",
   route: "latest",
-  handler: async (request, context) => {
-    await latest(context, request);
-    return context.res;
-  },
+  handler: latestHandler,
 });
 
 app.http("history", {
   methods: ["GET"],
   authLevel: "anonymous",
   route: "history",
-  handler: async (request, context) => {
-    await history(context, {
-      query: { window: request.query.get("window") ?? undefined },
-    });
-    return context.res;
-  },
+  handler: historyHandler,
 });
+
+module.exports = {
+  collectSensorHandler,
+  historyHandler,
+  latestHandler,
+};
