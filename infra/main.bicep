@@ -56,14 +56,14 @@ resource historyTable 'Microsoft.Storage/storageAccounts/tableServices/tables@20
 var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
 
 var currentTableSas = storage.listServiceSas('2025-06-01', {
-  canonicalizedResource: '/table/${storage.name}/${currentTableName}'
+  canonicalizedResource: '/table/${storage.name}/${toLower(currentTableName)}'
   signedPermission: 'rau'
   signedExpiry: tableSasExpiry
   signedProtocol: 'https'
 }).serviceSasToken
 
 var historyTableSas = storage.listServiceSas('2025-06-01', {
-  canonicalizedResource: '/table/${storage.name}/${historyTableName}'
+  canonicalizedResource: '/table/${storage.name}/${toLower(historyTableName)}'
   signedPermission: 'rau'
   signedExpiry: tableSasExpiry
   signedProtocol: 'https'
