@@ -75,56 +75,63 @@ jobs:
           const crypto = require('node:crypto');
           const fs = require('node:fs');
 
-          const token = process.env.SWITCHBOT_TOKEN;
-          const secret = process.env.SWITCHBOT_SECRET;
-          const t = Date.now().toString();
-          const nonce = crypto.randomUUID();
-          const sign = crypto
-            .createHmac('sha256', secret)
-            .update(Buffer.from(token + t + nonce, 'utf8'))
-            .digest('base64');
+          async function main() {
+            const token = process.env.SWITCHBOT_TOKEN;
+            const secret = process.env.SWITCHBOT_SECRET;
+            const t = Date.now().toString();
+            const nonce = crypto.randomUUID();
+            const sign = crypto
+              .createHmac('sha256', secret)
+              .update(Buffer.from(token + t + nonce, 'utf8'))
+              .digest('base64');
 
-          const response = await fetch('https://api.switch-bot.com/v1.1/devices', {
-            headers: {
-              Authorization: token,
-              sign,
-              t,
-              nonce,
-              'Content-Type': 'application/json; charset=utf8',
-            },
+            const response = await fetch('https://api.switch-bot.com/v1.1/devices', {
+              headers: {
+                Authorization: token,
+                sign,
+                t,
+                nonce,
+                'Content-Type': 'application/json; charset=utf8',
+              },
+            });
+
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || payload?.statusCode !== 100) {
+              throw new Error(`SwitchBot device discovery failed: HTTP ${response.status}, API ${payload?.statusCode ?? 'unknown'}`);
+            }
+
+            const devices = Array.isArray(payload?.body?.deviceList) ? payload.body.deviceList : [];
+            const preferredTypes = [
+              'MeterPro(CO2)',
+              'MeterPro',
+              'MeterPlus',
+              'Meter',
+              'WoIOSensor',
+              'WeatherStation',
+              'Hub 2',
+              'Hub 3',
+            ];
+
+            const candidates = devices
+              .filter((device) => preferredTypes.includes(device.deviceType))
+              .filter((device) => device.enableCloudService !== false)
+              .sort((left, right) => preferredTypes.indexOf(left.deviceType) - preferredTypes.indexOf(right.deviceType));
+
+            if (candidates.length === 0) {
+              const availableTypes = [...new Set(devices.map((device) => device.deviceType).filter(Boolean))].sort();
+              throw new Error(`No cloud-enabled environmental device found. Available device types: ${availableTypes.join(', ') || 'none'}`);
+            }
+
+            const selected = candidates[0];
+            fs.writeFileSync('/tmp/switchbot-device-id', selected.deviceId, { mode: 0o600 });
+            fs.writeFileSync('/tmp/switchbot-device-type', selected.deviceType, { mode: 0o600 });
+            console.log(`Selected one environmental SwitchBot device of type ${selected.deviceType} from ${candidates.length} candidate(s).`);
+          }
+
+          main().catch((error) => {
+            console.error(error instanceof Error ? error.message : String(error));
+            process.exit(1);
           });
-
-          const payload = await response.json().catch(() => null);
-          if (!response.ok || payload?.statusCode !== 100) {
-            throw new Error(`SwitchBot device discovery failed: HTTP ${response.status}, API ${payload?.statusCode ?? 'unknown'}`);
-          }
-
-          const devices = Array.isArray(payload?.body?.deviceList) ? payload.body.deviceList : [];
-          const preferredTypes = [
-            'MeterPro(CO2)',
-            'MeterPro',
-            'MeterPlus',
-            'Meter',
-            'WoIOSensor',
-            'WeatherStation',
-            'Hub 2',
-            'Hub 3',
-          ];
-
-          const candidates = devices
-            .filter((device) => preferredTypes.includes(device.deviceType))
-            .filter((device) => device.enableCloudService !== false)
-            .sort((left, right) => preferredTypes.indexOf(left.deviceType) - preferredTypes.indexOf(right.deviceType));
-
-          if (candidates.length === 0) {
-            const availableTypes = [...new Set(devices.map((device) => device.deviceType).filter(Boolean))].sort();
-            throw new Error(`No cloud-enabled environmental device found. Available device types: ${availableTypes.join(', ') || 'none'}`);
-          }
-
-          const selected = candidates[0];
-          fs.writeFileSync('/tmp/switchbot-device-id', selected.deviceId, { mode: 0o600 });
-          fs.writeFileSync('/tmp/switchbot-device-type', selected.deviceType, { mode: 0o600 });
-          console.log(`Selected one environmental SwitchBot device of type ${selected.deviceType} from ${candidates.length} candidate(s).`);
           NODE
 
           device_id="$(cat /tmp/switchbot-device-id)"
@@ -153,7 +160,7 @@ jobs:
               history_status="$(curl --silent --show-error --output /tmp/history.json --write-out '%{http_code}' "$API_BASE_URL/api/history?window=1h" || true)"
               history_api_status="$(jq -r '.status // empty' /tmp/history.json 2>/dev/null || true)"
               if [[ "$history_status:$history_api_status" == "200:ok" ]]; then
-                reading_count="$(jq -r '(.readings // .items // []) | length' /tmp/history.json 2>/dev/null || echo 0)"
+                reading_count="$(jq -r '(.data // []) | length' /tmp/history.json 2>/dev/null || echo 0)"
                 echo "Stored SwitchBot read path is ready (latest 200/ok, history 200/ok, history rows: $reading_count)."
                 exit 0
               fi
