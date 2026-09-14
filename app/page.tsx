@@ -43,6 +43,62 @@ function ReadingValues({ reading }: { reading: SensorReading }) {
   );
 }
 
+function HistoryRows({ readings }: { readings: SensorReading[] }) {
+  return (
+    <>
+      <ul className="mt-5 divide-y divide-border sm:hidden" aria-label="最近のセンサー履歴">
+        {readings.map((reading) => (
+          <li key={`${reading.deviceId}-${reading.observedAt}`} className="py-4 first:pt-0">
+            <p className="text-sm font-medium">{formatObservedAt(reading.observedAt)}</p>
+            <dl className="mt-2 grid grid-cols-3 gap-x-3 text-sm">
+              <div>
+                <dt className="text-muted">温度</dt>
+                <dd className="mt-1 font-medium">{reading.temperature.toFixed(1)}℃</dd>
+              </div>
+              <div>
+                <dt className="text-muted">湿度</dt>
+                <dd className="mt-1 font-medium">{reading.humidity}%</dd>
+              </div>
+              <div>
+                <dt className="text-muted">バッテリー</dt>
+                <dd className="mt-1 font-medium">
+                  {reading.battery === undefined ? "—" : `${reading.battery}%`}
+                </dd>
+              </div>
+            </dl>
+          </li>
+        ))}
+      </ul>
+
+      <table className="mt-5 hidden w-full border-collapse text-left text-sm sm:table">
+        <thead className="text-muted">
+          <tr className="border-b border-border">
+            <th className="py-2 pr-4 font-medium">観測時刻</th>
+            <th className="px-4 py-2 font-medium">温度</th>
+            <th className="px-4 py-2 font-medium">湿度</th>
+            <th className="py-2 pl-4 font-medium">バッテリー</th>
+          </tr>
+        </thead>
+        <tbody>
+          {readings.map((reading) => (
+            <tr
+              key={`${reading.deviceId}-${reading.observedAt}`}
+              className="border-b border-border/70"
+            >
+              <td className="py-3 pr-4">{formatObservedAt(reading.observedAt)}</td>
+              <td className="px-4 py-3">{reading.temperature.toFixed(1)}℃</td>
+              <td className="px-4 py-3">{reading.humidity}%</td>
+              <td className="py-3 pl-4">
+                {reading.battery === undefined ? "—" : `${reading.battery}%`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
 export default async function Home() {
   const state = await getDashboardState();
 
@@ -122,7 +178,10 @@ export default async function Home() {
               <h2 id="history-heading" className="text-xl font-semibold">
                 最近の履歴
               </h2>
-              <p className="text-sm text-muted">24時間 · {state.historyCount}件</p>
+              <p className="text-sm text-muted">
+                24時間 · {state.historyCount}件
+                {state.historyCount > 12 ? "中 直近12件を表示" : ""}
+              </p>
             </div>
 
             {state.historyError ? (
@@ -132,33 +191,7 @@ export default async function Home() {
             ) : state.history.length === 0 ? (
               <p className="mt-4 leading-7 text-muted">表示できる履歴はまだありません。</p>
             ) : (
-              <div className="mt-5 overflow-x-auto">
-                <table className="w-full min-w-[32rem] border-collapse text-left text-sm">
-                  <thead className="text-muted">
-                    <tr className="border-b border-border">
-                      <th className="py-2 pr-4 font-medium">観測時刻</th>
-                      <th className="px-4 py-2 font-medium">温度</th>
-                      <th className="px-4 py-2 font-medium">湿度</th>
-                      <th className="py-2 pl-4 font-medium">バッテリー</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {state.history.slice(0, 12).map((reading) => (
-                      <tr
-                        key={`${reading.deviceId}-${reading.observedAt}`}
-                        className="border-b border-border/70"
-                      >
-                        <td className="py-3 pr-4">{formatObservedAt(reading.observedAt)}</td>
-                        <td className="px-4 py-3">{reading.temperature.toFixed(1)}℃</td>
-                        <td className="px-4 py-3">{reading.humidity}%</td>
-                        <td className="py-3 pl-4">
-                          {reading.battery === undefined ? "—" : `${reading.battery}%`}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <HistoryRows readings={state.history.slice(0, 12)} />
             )}
           </section>
         </>
