@@ -33,7 +33,8 @@ The repository derives its working rules from Foundation v0.10.0, including:
 - Azure infrastructure and Functions deployment are owned by `.github/workflows/deploy-azure.yml` after that workflow has landed on `main`.
 - The workflow is triggered only by the repository owner's exact `/deploy-azure` comment on Issue #3; PR code cannot request Azure OIDC credentials merely by running CI.
 - The deployment job receives `id-token: write`; ordinary web/IaC CI jobs do not.
-- Azure authentication uses the already-proven shared GitHub OIDC deployment identity through repository Variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`. No client secret is introduced.
+- Azure authentication uses the already-proven shared GitHub OIDC deployment identity. For this single-owner PoC, the client ID, tenant ID, and subscription ID are intentionally committed in the trusted workflow as public target identifiers rather than stored as repository Variables.
+- Those UUIDs are configuration, not authentication secrets. No Azure client secret, certificate private key, or other privileged credential is committed.
 - `Azure/login` is pinned to reviewed commit `7ddb5af1ef8758cf1353cf3b42f940aee27ba21c`.
 - SwitchBot Token/Secret are not GitHub deployment inputs. They remain Function App server-side settings and are preserved across infrastructure redeployments.
 
