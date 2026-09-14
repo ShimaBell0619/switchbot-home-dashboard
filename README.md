@@ -61,7 +61,7 @@ SwitchBot credentials are deliberately not managed by Bicep or GitHub Actions. A
 
 Do not commit or paste those values into repository files. The deployment workflow preserves these existing server-side settings across later Bicep redeployments.
 
-After Azure is ready, set the Vercel server-side environment variable `AZURE_FUNCTIONS_BASE_URL` to the deployed Function App base URL. The web application then reads only the application-owned latest/history API.
+For the fixed single-environment PoC, `vercel.json` pins the server-side `AZURE_FUNCTIONS_BASE_URL` to the deployed Function App. The Function App base URL is a public read-endpoint identifier, not a credential; SwitchBot credentials and Azure Storage credentials remain Azure-side only. Local development can continue to set `AZURE_FUNCTIONS_BASE_URL` through `.env.local`.
 
 ## PoC API
 
