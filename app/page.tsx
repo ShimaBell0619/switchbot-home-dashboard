@@ -1,26 +1,168 @@
-export default function Home() {
+import { getDashboardState, type SensorReading } from "@/lib/backend";
+
+export const dynamic = "force-dynamic";
+
+const dateTime = new Intl.DateTimeFormat("ja-JP", {
+  timeZone: "Asia/Tokyo",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+});
+
+function formatObservedAt(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : dateTime.format(date);
+}
+
+function ReadingValues({ reading }: { reading: SensorReading }) {
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center px-6 py-16 sm:px-10">
-      <p className="mb-3 text-sm font-medium text-muted">Architecture PoC</p>
-      <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-        SwitchBot Home Dashboard
-      </h1>
-      <p className="mt-4 max-w-2xl text-base leading-7 text-muted sm:text-lg">
-        SwitchBot のセンサーデータをバックグラウンドで収集し、自前ストレージから高速に参照する構成を検証します。
-      </p>
-      <section className="mt-10 border-t border-border pt-6" aria-labelledby="status-heading">
-        <h2 id="status-heading" className="text-sm font-semibold text-foreground">
-          Bootstrap status
-        </h2>
-        <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-[10rem_1fr]">
-          <dt className="text-muted">Foundation</dt>
-          <dd>v0.10.0 adopted</dd>
-          <dt className="text-muted">Data path</dt>
-          <dd>Not connected yet</dd>
-          <dt className="text-muted">Next step</dt>
-          <dd>SwitchBot → Azure Functions → Table Storage → Web</dd>
-        </dl>
-      </section>
+    <dl className="mt-5 flex flex-wrap items-end gap-x-10 gap-y-4">
+      <div>
+        <dt className="text-sm text-muted">温度</dt>
+        <dd className="mt-1 text-4xl font-semibold tracking-tight sm:text-5xl">
+          {reading.temperature.toFixed(1)}
+          <span className="ml-1 text-xl font-medium">℃</span>
+        </dd>
+      </div>
+      <div>
+        <dt className="text-sm text-muted">湿度</dt>
+        <dd className="mt-1 text-2xl font-semibold">
+          {reading.humidity}
+          <span className="ml-1 text-base font-medium">%</span>
+        </dd>
+      </div>
+      {reading.battery !== undefined ? (
+        <div>
+          <dt className="text-sm text-muted">バッテリー</dt>
+          <dd className="mt-1 text-lg font-medium">{reading.battery}%</dd>
+        </div>
+      ) : null}
+    </dl>
+  );
+}
+
+export default async function Home() {
+  const state = await getDashboardState();
+
+  return (
+    <main className="mx-auto min-h-screen w-full max-w-3xl px-6 py-14 sm:px-10 sm:py-20">
+      <header>
+        <p className="text-sm font-medium text-muted">Architecture PoC</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
+          SwitchBot Home Dashboard
+        </h1>
+      </header>
+
+      {state.kind === "web_not_configured" ? (
+        <section className="mt-12 border-t border-border pt-7" aria-labelledby="setup-heading">
+          <h2 id="setup-heading" className="text-xl font-semibold">
+            Web接続設定待ち
+          </h2>
+          <p className="mt-3 leading-7 text-muted">
+            Azure Functions のURLがWeb側へまだ設定されていません。UIはSwitchBotへ直接接続しません。
+          </p>
+        </section>
+      ) : null}
+
+      {state.kind === "collector_not_configured" ? (
+        <section className="mt-12 border-t border-border pt-7" aria-labelledby="collector-heading">
+          <h2 id="collector-heading" className="text-xl font-semibold">
+            Azure read path 接続済み
+          </h2>
+          <p className="mt-3 leading-7 text-muted">
+            保存先とWeb APIには到達できています。SwitchBotの収集資格情報をAzure側へ設定すると収集を開始できます。
+          </p>
+        </section>
+      ) : null}
+
+      {state.kind === "no_data" ? (
+        <section className="mt-12 border-t border-border pt-7" aria-labelledby="empty-heading">
+          <h2 id="empty-heading" className="text-xl font-semibold">
+            収集データ待ち
+          </h2>
+          <p className="mt-3 leading-7 text-muted">
+            Collectorは設定済みですが、まだ有効なセンサーデータが保存されていません。
+          </p>
+        </section>
+      ) : null}
+
+      {state.kind === "error" ? (
+        <section className="mt-12 border-t border-border pt-7" aria-labelledby="error-heading">
+          <h2 id="error-heading" className="text-xl font-semibold">
+            保存済みデータを取得できません
+          </h2>
+          <p className="mt-3 leading-7 text-muted">{state.message}</p>
+        </section>
+      ) : null}
+
+      {state.kind === "ready" ? (
+        <>
+          <section className="mt-12 border-t border-border pt-7" aria-labelledby="latest-heading">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+              <h2 id="latest-heading" className="text-xl font-semibold">
+                最新の記録
+              </h2>
+              <p className="text-sm text-muted">
+                {state.freshness.stale ? "古いデータです" : "最新性は正常です"}
+              </p>
+            </div>
+            <ReadingValues reading={state.latest} />
+            <p className="mt-5 text-sm text-muted">
+              観測 {formatObservedAt(state.latest.observedAt)}
+              {state.freshness.ageSeconds !== null
+                ? ` · ${Math.floor(state.freshness.ageSeconds / 60)}分前`
+                : ""}
+            </p>
+          </section>
+
+          <section className="mt-12 border-t border-border pt-7" aria-labelledby="history-heading">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+              <h2 id="history-heading" className="text-xl font-semibold">
+                最近の履歴
+              </h2>
+              <p className="text-sm text-muted">24時間 · {state.historyCount}件</p>
+            </div>
+
+            {state.historyError ? (
+              <p className="mt-4 leading-7 text-muted">
+                最新値は取得できましたが、履歴の読み取りに失敗しました。
+              </p>
+            ) : state.history.length === 0 ? (
+              <p className="mt-4 leading-7 text-muted">表示できる履歴はまだありません。</p>
+            ) : (
+              <div className="mt-5 overflow-x-auto">
+                <table className="w-full min-w-[32rem] border-collapse text-left text-sm">
+                  <thead className="text-muted">
+                    <tr className="border-b border-border">
+                      <th className="py-2 pr-4 font-medium">観測時刻</th>
+                      <th className="px-4 py-2 font-medium">温度</th>
+                      <th className="px-4 py-2 font-medium">湿度</th>
+                      <th className="py-2 pl-4 font-medium">バッテリー</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {state.history.slice(0, 12).map((reading) => (
+                      <tr
+                        key={`${reading.deviceId}-${reading.observedAt}`}
+                        className="border-b border-border/70"
+                      >
+                        <td className="py-3 pr-4">{formatObservedAt(reading.observedAt)}</td>
+                        <td className="px-4 py-3">{reading.temperature.toFixed(1)}℃</td>
+                        <td className="px-4 py-3">{reading.humidity}%</td>
+                        <td className="py-3 pl-4">
+                          {reading.battery === undefined ? "—" : `${reading.battery}%`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </>
+      ) : null}
     </main>
   );
 }
