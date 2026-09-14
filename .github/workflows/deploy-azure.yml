@@ -28,9 +28,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      # These UUIDs identify the approved PoC Azure target; they are configuration,
+      # not authentication secrets. Privileged credentials are never committed.
+      AZURE_CLIENT_ID: 803efb43-a00d-4113-8020-8c88996c7841
+      AZURE_TENANT_ID: 68bc9518-b4ee-443a-abbf-9a642a0a8735
+      AZURE_SUBSCRIPTION_ID: 82615ba2-5bd4-401d-b054-50df1e0e0333
       RESOURCE_GROUP: rg-switchbot-poc-jpe-01
       LOCATION: japaneast
     steps:
@@ -40,25 +42,12 @@ jobs:
           ref: main
           persist-credentials: false
 
-      - name: Validate Azure repository variables
-        shell: bash
-        run: |
-          set -euo pipefail
-          missing=()
-          [[ -n "$AZURE_CLIENT_ID" ]] || missing+=(AZURE_CLIENT_ID)
-          [[ -n "$AZURE_TENANT_ID" ]] || missing+=(AZURE_TENANT_ID)
-          [[ -n "$AZURE_SUBSCRIPTION_ID" ]] || missing+=(AZURE_SUBSCRIPTION_ID)
-          if (( ${#missing[@]} > 0 )); then
-            echo "::error::Missing required repository Variables: ${missing[*]}"
-            exit 1
-          fi
-
       - name: Sign in to Azure with OIDC
         uses: Azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
       - name: Preserve existing SwitchBot server settings
         shell: bash

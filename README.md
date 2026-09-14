@@ -51,7 +51,7 @@ Azure resources are defined in `infra/main.bicep`. The initial PoC creates only:
 
 The privileged deployment workflow is intentionally not runnable from PR code. After the workflow exists on `main`, the repository owner can comment exactly `/deploy-azure` on Issue #3. The trusted `main` workflow signs in to Azure with GitHub OIDC, deploys the Bicep template, deploys the Functions package, and smoke-tests `/api/latest`.
 
-The workflow expects repository Variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`. It does not use an Azure client secret.
+The PoC's Azure client ID, tenant ID, and subscription ID are intentionally committed as public deployment identifiers in the trusted workflow. They identify the fixed personal Azure target and are not authentication secrets. No Azure client secret is used or committed.
 
 SwitchBot credentials are deliberately not managed by Bicep or GitHub Actions. After Azure deployment, configure these Function App settings directly in Azure:
 
