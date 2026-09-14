@@ -161,8 +161,10 @@ jobs:
               history_api_status="$(jq -r '.status // empty' /tmp/history.json 2>/dev/null || true)"
               if [[ "$history_status:$history_api_status" == "200:ok" ]]; then
                 reading_count="$(jq -r '(.data // []) | length' /tmp/history.json 2>/dev/null || echo 0)"
-                echo "Stored SwitchBot read path is ready (latest 200/ok, history 200/ok, history rows: $reading_count)."
-                exit 0
+                if (( reading_count > 0 )); then
+                  echo "Stored SwitchBot read path is ready (latest 200/ok, history 200/ok, history rows: $reading_count)."
+                  exit 0
+                fi
               fi
             fi
             sleep 15
