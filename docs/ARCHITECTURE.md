@@ -34,7 +34,8 @@ Collection and read responsibilities are intentionally separated. A slow or temp
 
 ## Runtime and deployment
 
-- Azure Functions uses Linux Flex Consumption (`FC1`), Node.js 24, and the Functions v3 programming model.
+- Azure Functions uses Linux Flex Consumption (`FC1`), Node.js 24, and the current Functions Node.js v4 programming model.
+- The v4 registration layer is intentionally thin: `src/index.js` registers the timer/HTTP triggers while testable collection, validation, persistence, and response logic stays in small application-owned modules.
 - The PoC uses one Function App and one Standard_LRS Storage Account in Japan East.
 - `infra/main.bicep` owns the Azure workload resources.
 - Application Insights, Key Vault, VNet integration, private endpoints, queues/event buses, and additional data stores are deliberately excluded from the PoC.
@@ -56,7 +57,7 @@ The Azure workflow preserves existing `SWITCHBOT_TOKEN`, `SWITCHBOT_SECRET`, and
 
 ### Azure Functions
 
-The PoC uses one Function App with separate functions:
+The PoC uses one Function App with v4 code-based trigger registration:
 
 - `collectSensor`: timer-triggered collector scheduled every five minutes;
 - `latest`: anonymous low-sensitivity read endpoint for the latest stored environmental reading;
