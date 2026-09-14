@@ -17,7 +17,8 @@ jobs:
     timeout-minutes: 1
     steps:
       - name: Authorize exact deployment request
-        run: echo "Authorized /deploy-azure for Issue #3 from repository owner."
+        run: |
+          echo "Authorized /deploy-azure for Issue #3 from repository owner."
 
   deploy:
     needs: authorize
