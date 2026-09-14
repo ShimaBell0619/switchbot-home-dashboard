@@ -5,7 +5,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "next dev",
-    "check": "biome check .",
+    "check": "biome lint .",
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/foundation-bootstrap.test.mjs",
     "build": "next build",
