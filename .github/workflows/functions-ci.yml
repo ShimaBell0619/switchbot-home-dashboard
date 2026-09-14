@@ -35,5 +35,12 @@ jobs:
       - name: Install Functions runtime dependency
         run: npm install --ignore-scripts --no-audit --no-fund
 
-      - name: Verify v4 function registration loads
-        run: node -e "require('./src/index.js')"
+      - name: Run Functions tests with v4 runtime package installed
+        run: node --test tests/*.test.js
+
+      - name: Emit generated lockfile for bootstrap
+        run: |
+          echo 'LOCKFILE_BEGIN'
+          base64 -w0 package-lock.json
+          echo
+          echo 'LOCKFILE_END'
