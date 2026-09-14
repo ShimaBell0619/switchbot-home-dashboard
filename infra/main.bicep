@@ -110,7 +110,6 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
       }
     }
     siteConfig: {
-      ftpsState: 'Disabled'
       minTlsVersion: '1.2'
       appSettings: [
         {
