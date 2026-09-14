@@ -1,0 +1,174 @@
+name: Deploy Azure PoC
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  authorize:
+    if: >-
+      ${{ github.event.issue.number == 3 &&
+          !github.event.issue.pull_request &&
+          github.event.comment.body == '/deploy-azure' &&
+          github.event.comment.author_association == 'OWNER' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Authorize exact deployment request
+        run: echo "Authorized /deploy-azure for Issue #3 from repository owner."
+
+  deploy:
+    needs: authorize
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      RESOURCE_GROUP: rg-switchbot-poc-jpe-01
+      LOCATION: japaneast
+    steps:
+      - name: Checkout trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Validate Azure repository variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "$AZURE_CLIENT_ID" ]] || missing+=(AZURE_CLIENT_ID)
+          [[ -n "$AZURE_TENANT_ID" ]] || missing+=(AZURE_TENANT_ID)
+          [[ -n "$AZURE_SUBSCRIPTION_ID" ]] || missing+=(AZURE_SUBSCRIPTION_ID)
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Missing required repository Variables: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Sign in to Azure with OIDC
+        uses: Azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Preserve existing SwitchBot server settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '[]' > /tmp/switchbot-settings.json
+          if [[ "$(az group exists --name "$RESOURCE_GROUP" --output tsv)" != "true" ]]; then
+            exit 0
+          fi
+
+          existing_app="$(az functionapp list --resource-group "$RESOURCE_GROUP" --query '[0].name' --output tsv)"
+          if [[ -z "$existing_app" ]]; then
+            exit 0
+          fi
+
+          az functionapp config appsettings list \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$existing_app" \
+            --output json \
+            | jq '[.[] | select(.name == "SWITCHBOT_TOKEN" or .name == "SWITCHBOT_SECRET" or .name == "SWITCHBOT_DEVICE_ID")]' \
+            > /tmp/switchbot-settings.json
+
+          while IFS= read -r value; do
+            [[ -n "$value" ]] && echo "::add-mask::$value"
+          done < <(jq -r '.[].value // empty' /tmp/switchbot-settings.json)
+
+      - name: Deploy Azure infrastructure
+        id: infra
+        shell: bash
+        run: |
+          set -euo pipefail
+          az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output none
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "issue3-poc-${GITHUB_RUN_ID}" \
+            --template-file infra/main.bicep \
+            --parameters location="$LOCATION" \
+            --query properties.outputs \
+            --output json > /tmp/deployment-outputs.json
+
+          function_app="$(jq -r '.functionAppName.value' /tmp/deployment-outputs.json)"
+          api_base_url="$(jq -r '.apiBaseUrl.value' /tmp/deployment-outputs.json)"
+          [[ -n "$function_app" && "$function_app" != "null" ]]
+          [[ "$api_base_url" == https://* ]]
+
+          echo "function_app=$function_app" >> "$GITHUB_OUTPUT"
+          echo "api_base_url=$api_base_url" >> "$GITHUB_OUTPUT"
+
+      - name: Restore preserved SwitchBot server settings
+        shell: bash
+        env:
+          FUNCTION_APP: ${{ steps.infra.outputs.function_app }}
+        run: |
+          set -euo pipefail
+          if [[ "$(jq 'length' /tmp/switchbot-settings.json)" == "0" ]]; then
+            exit 0
+          fi
+
+          while IFS=$'\t' read -r name value; do
+            [[ -n "$value" ]] && echo "::add-mask::$value"
+            az functionapp config appsettings set \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "$FUNCTION_APP" \
+              --settings "$name=$value" \
+              --output none
+          done < <(jq -r '.[] | [.name, .value] | @tsv' /tmp/switchbot-settings.json)
+
+      - name: Deploy Functions package
+        shell: bash
+        env:
+          FUNCTION_APP: ${{ steps.infra.outputs.function_app }}
+        run: |
+          set -euo pipefail
+          (cd azure/functions && zip -q -r /tmp/functions.zip .)
+          az functionapp deployment source config-zip \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$FUNCTION_APP" \
+            --src /tmp/functions.zip \
+            --build-remote true \
+            --output none
+
+      - name: Smoke latest endpoint
+        shell: bash
+        env:
+          API_BASE_URL: ${{ steps.infra.outputs.api_base_url }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            http_status="$(curl --silent --show-error --output /tmp/latest.json --write-out '%{http_code}' "$API_BASE_URL/api/latest" || true)"
+            api_status="$(jq -r '.status // empty' /tmp/latest.json 2>/dev/null || true)"
+            case "$http_status:$api_status" in
+              200:ok|404:no_data|503:not_configured)
+                echo "Azure Functions read path is ready ($http_status/$api_status)."
+                exit 0
+                ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Azure Functions latest endpoint did not become ready."
+          exit 1
+
+      - name: Record deployment evidence
+        shell: bash
+        env:
+          FUNCTION_APP: ${{ steps.infra.outputs.function_app }}
+          API_BASE_URL: ${{ steps.infra.outputs.api_base_url }}
+        run: |
+          {
+            echo '### SwitchBot Azure PoC deployment'
+            echo "- Resource group: \`$RESOURCE_GROUP\`"
+            echo "- Function App: \`$FUNCTION_APP\`"
+            echo "- API: $API_BASE_URL"
+            echo '- SwitchBot credentials remain server-side and are not managed by this workflow.'
+          } >> "$GITHUB_STEP_SUMMARY"
