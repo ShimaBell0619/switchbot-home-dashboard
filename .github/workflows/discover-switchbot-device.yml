@@ -61,10 +61,20 @@ jobs:
             --name "$function_app" \
             --output json)"
 
+          configured_names="$(jq -r '.[].name | select(startswith("SWITCHBOT_"))' <<< "$settings" | sort | paste -sd ',' -)"
+          echo "Configured SwitchBot setting names: ${configured_names:-none}"
+
           token="$(jq -r '.[] | select(.name == "SWITCHBOT_TOKEN") | .value' <<< "$settings")"
           secret="$(jq -r '.[] | select(.name == "SWITCHBOT_SECRET") | .value' <<< "$settings")"
-          [[ -n "$token" && "$token" != "null" ]]
-          [[ -n "$secret" && "$secret" != "null" ]]
+
+          if [[ -z "$token" || "$token" == "null" ]]; then
+            echo "::error::SWITCHBOT_TOKEN was not found in the Function App settings."
+            exit 1
+          fi
+          if [[ -z "$secret" || "$secret" == "null" ]]; then
+            echo "::error::SWITCHBOT_SECRET was not found in the Function App settings."
+            exit 1
+          fi
 
           echo "::add-mask::$token"
           echo "::add-mask::$secret"
