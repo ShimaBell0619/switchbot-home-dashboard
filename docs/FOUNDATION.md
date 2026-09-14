@@ -25,6 +25,8 @@ The repository derives its working rules from Foundation v0.10.0, including:
 
 - Vercel Git Integration owns web deployment.
 - `vercel.json` disables ordinary branches, enables `main` for Production, and enables only trusted synthetic `preview/**` refs for non-Production hosted review.
+- The fixed PoC also commits `AZURE_FUNCTIONS_BASE_URL` in `vercel.json`. This value is the public anonymous Function App base URL, not a credential, and lets the server-rendered Vercel UI use the one approved Azure backend without requiring mutable Project Settings for this single-environment proof.
+- The same public backend URL may therefore be visible to trusted Preview deployments; no SwitchBot credential, Storage credential, or privileged Azure capability is exposed with it.
 - Fixed Staging is not adopted.
 - Production credentials and privileged Azure state must not be made available to Preview PR code.
 
