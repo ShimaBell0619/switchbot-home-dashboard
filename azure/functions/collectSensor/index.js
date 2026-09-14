@@ -14,30 +14,39 @@ function switchBotConfig(env = process.env) {
   };
 }
 
-module.exports = async function collectSensor(context) {
-  const config = switchBotConfig();
-  if (!config.configured) {
-    context.log.warn(`SwitchBot collector is not configured; missing: ${config.missing.join(", ")}`);
-    return;
-  }
+function createCollector({
+  env = process.env,
+  now = () => new Date(),
+  fetchSensorStatusFn = fetchSensorStatus,
+  saveReadingFn = saveReading,
+} = {}) {
+  return async function collectSensor(context) {
+    const config = switchBotConfig(env);
+    if (!config.configured) {
+      context.log.warn(`SwitchBot collector is not configured; missing: ${config.missing.join(", ")}`);
+      return;
+    }
 
-  try {
-    const status = await fetchSensorStatus(config);
-    const observedAt = new Date().toISOString();
-    const reading = {
-      ...status,
-      observedAt,
-      collectedAt: observedAt,
-      sourceTimestampKind: "collector",
-    };
+    try {
+      const status = await fetchSensorStatusFn(config);
+      const observedAt = now().toISOString();
+      const reading = {
+        ...status,
+        observedAt,
+        collectedAt: observedAt,
+        sourceTimestampKind: "collector",
+      };
 
-    await saveReading(reading);
-    context.log(`Stored SwitchBot environmental reading at ${observedAt}`);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    context.log.error(`SwitchBot collection failed: ${message}`);
-    throw error;
-  }
-};
+      await saveReadingFn(reading);
+      context.log(`Stored SwitchBot environmental reading at ${observedAt}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      context.log.error(`SwitchBot collection failed: ${message}`);
+      throw error;
+    }
+  };
+}
 
+module.exports = createCollector();
+module.exports.createCollector = createCollector;
 module.exports.switchBotConfig = switchBotConfig;
