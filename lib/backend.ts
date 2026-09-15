@@ -1,12 +1,28 @@
-export type SensorReading = {
-  deviceId: string;
-  deviceType: string;
-  temperature: number;
-  humidity: number;
-  battery?: number;
-  observedAt: string;
-  collectedAt: string;
-  sourceTimestampKind: string;
+export type StoryMetricRange = {
+  min: number;
+  max: number;
+};
+
+export type StoryEvent = {
+  type: string;
+  metric: string;
+  occurredAt: string;
+  title: string;
+  detail: string;
+};
+
+export type HomeStory = {
+  kind: "events" | "calm";
+  date: string;
+  summary: string;
+  observations: number;
+  latestObservedAt: string;
+  events: StoryEvent[];
+  stats: {
+    co2: StoryMetricRange | null;
+    temperature: StoryMetricRange | null;
+    humidity: StoryMetricRange | null;
+  };
 };
 
 export type DashboardState =
@@ -16,11 +32,8 @@ export type DashboardState =
   | { kind: "error"; message: string }
   | {
       kind: "ready";
-      latest: SensorReading;
+      story: HomeStory;
       freshness: { ageSeconds: number | null; stale: boolean };
-      history: SensorReading[];
-      historyCount: number;
-      historyError: boolean;
     };
 
 type ApiBody = Record<string, unknown>;
@@ -37,26 +50,82 @@ async function readBody(response: Response): Promise<ApiBody> {
   return body as ApiBody;
 }
 
-function parseReading(value: unknown): SensorReading {
+function parseRange(value: unknown): StoryMetricRange | null {
+  if (value === null) return null;
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Backend reading is missing.");
+    throw new Error("Backend story range has an invalid shape.");
   }
-  const reading = value as Record<string, unknown>;
+  const range = value as Record<string, unknown>;
+  if (typeof range.min !== "number" || typeof range.max !== "number") {
+    throw new Error("Backend story range has an invalid shape.");
+  }
+  return { min: range.min, max: range.max };
+}
+
+function parseEvent(value: unknown): StoryEvent {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Backend story event is missing.");
+  }
+  const event = value as Record<string, unknown>;
   if (
-    typeof reading.deviceId !== "string" ||
-    typeof reading.deviceType !== "string" ||
-    typeof reading.temperature !== "number" ||
-    typeof reading.humidity !== "number" ||
-    typeof reading.observedAt !== "string" ||
-    typeof reading.collectedAt !== "string" ||
-    typeof reading.sourceTimestampKind !== "string"
+    typeof event.type !== "string" ||
+    typeof event.metric !== "string" ||
+    typeof event.occurredAt !== "string" ||
+    typeof event.title !== "string" ||
+    typeof event.detail !== "string"
   ) {
-    throw new Error("Backend reading has an invalid shape.");
+    throw new Error("Backend story event has an invalid shape.");
   }
-  if (reading.battery !== undefined && typeof reading.battery !== "number") {
-    throw new Error("Backend battery value has an invalid shape.");
+  return event as StoryEvent;
+}
+
+function parseStory(value: unknown): HomeStory {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Backend story is missing.");
   }
-  return reading as SensorReading;
+  const story = value as Record<string, unknown>;
+  if (
+    (story.kind !== "events" && story.kind !== "calm") ||
+    typeof story.date !== "string" ||
+    typeof story.summary !== "string" ||
+    typeof story.observations !== "number" ||
+    typeof story.latestObservedAt !== "string" ||
+    !Array.isArray(story.events) ||
+    !story.stats ||
+    typeof story.stats !== "object" ||
+    Array.isArray(story.stats)
+  ) {
+    throw new Error("Backend story has an invalid shape.");
+  }
+
+  const stats = story.stats as Record<string, unknown>;
+  return {
+    kind: story.kind,
+    date: story.date,
+    summary: story.summary,
+    observations: story.observations,
+    latestObservedAt: story.latestObservedAt,
+    events: story.events.map(parseEvent),
+    stats: {
+      co2: parseRange(stats.co2),
+      temperature: parseRange(stats.temperature),
+      humidity: parseRange(stats.humidity),
+    },
+  };
+}
+
+function parseFreshness(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Backend freshness data is missing.");
+  }
+  const freshness = value as Record<string, unknown>;
+  if (
+    !(typeof freshness.ageSeconds === "number" || freshness.ageSeconds === null) ||
+    typeof freshness.stale !== "boolean"
+  ) {
+    throw new Error("Backend freshness data has an invalid shape.");
+  }
+  return freshness as { ageSeconds: number | null; stale: boolean };
 }
 
 export async function getDashboardState(env = process.env): Promise<DashboardState> {
@@ -64,57 +133,23 @@ export async function getDashboardState(env = process.env): Promise<DashboardSta
   if (!baseUrl) return { kind: "web_not_configured" };
 
   try {
-    const latestResponse = await fetch(`${baseUrl}/api/latest`, { cache: "no-store" });
-    const latestBody = await readBody(latestResponse);
+    const response = await fetch(`${baseUrl}/api/story`, { cache: "no-store" });
+    const body = await readBody(response);
 
-    if (latestResponse.status === 503 && latestBody.status === "not_configured") {
+    if (response.status === 503 && body.status === "not_configured") {
       return { kind: "collector_not_configured" };
     }
-    if (latestResponse.status === 404 && latestBody.status === "no_data") {
+    if (response.status === 404 && body.status === "no_data") {
       return { kind: "no_data" };
     }
-    if (!latestResponse.ok || latestBody.status !== "ok") {
-      return { kind: "error", message: "最新データを取得できませんでした。" };
+    if (!response.ok || body.status !== "ok") {
+      return { kind: "error", message: "今日のストーリーを取得できませんでした。" };
     }
-
-    const latest = parseReading(latestBody.data);
-    const freshnessValue = latestBody.freshness;
-    if (!freshnessValue || typeof freshnessValue !== "object" || Array.isArray(freshnessValue)) {
-      throw new Error("Backend freshness data is missing.");
-    }
-    const freshness = freshnessValue as Record<string, unknown>;
-    if (
-      !(typeof freshness.ageSeconds === "number" || freshness.ageSeconds === null) ||
-      typeof freshness.stale !== "boolean"
-    ) {
-      throw new Error("Backend freshness data has an invalid shape.");
-    }
-
-    const historyResponse = await fetch(`${baseUrl}/api/history?window=24h`, { cache: "no-store" });
-    if (!historyResponse.ok) {
-      return {
-        kind: "ready",
-        latest,
-        freshness: freshness as { ageSeconds: number | null; stale: boolean },
-        history: [],
-        historyCount: 0,
-        historyError: true,
-      };
-    }
-
-    const historyBody = await readBody(historyResponse);
-    if (historyBody.status !== "ok" || !Array.isArray(historyBody.data)) {
-      throw new Error("Backend history data has an invalid shape.");
-    }
-    const history = historyBody.data.map(parseReading);
 
     return {
       kind: "ready",
-      latest,
-      freshness: freshness as { ageSeconds: number | null; stale: boolean },
-      history,
-      historyCount: typeof historyBody.count === "number" ? historyBody.count : history.length,
-      historyError: false,
+      story: parseStory(body.data),
+      freshness: parseFreshness(body.freshness),
     };
   } catch {
     return { kind: "error", message: "Azure の保存済みデータへ接続できませんでした。" };
