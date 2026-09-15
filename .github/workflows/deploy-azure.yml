@@ -140,7 +140,7 @@ jobs:
             api_status="$(jq -r '.status // empty' /tmp/latest.json 2>/dev/null || true)"
             case "$http_status:$api_status" in
               200:ok|404:no_data|503:not_configured)
-                echo "Azure Functions read path is ready ($http_status/$api_status)."
+                echo "Azure Functions latest read path is ready ($http_status/$api_status)."
                 exit 0
                 ;;
             esac
@@ -149,16 +149,41 @@ jobs:
           echo "::error::Azure Functions latest endpoint did not become ready."
           exit 1
 
+      - name: Smoke Home Story endpoint
+        id: story-smoke
+        shell: bash
+        env:
+          API_BASE_URL: ${{ steps.infra.outputs.api_base_url }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            http_status="$(curl --silent --show-error --output /tmp/story.json --write-out '%{http_code}' "$API_BASE_URL/api/story" || true)"
+            api_status="$(jq -r '.status // empty' /tmp/story.json 2>/dev/null || true)"
+            case "$http_status:$api_status" in
+              200:ok|404:no_data|503:not_configured)
+                story_state="$http_status/$api_status"
+                echo "story_state=$story_state" >> "$GITHUB_OUTPUT"
+                echo "Azure Functions Home Story read path is ready ($story_state)."
+                exit 0
+                ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Azure Functions Home Story endpoint did not become ready."
+          exit 1
+
       - name: Record deployment evidence
         shell: bash
         env:
           FUNCTION_APP: ${{ steps.infra.outputs.function_app }}
           API_BASE_URL: ${{ steps.infra.outputs.api_base_url }}
+          STORY_STATE: ${{ steps.story-smoke.outputs.story_state }}
         run: |
           {
             echo '### SwitchBot Azure PoC deployment'
             echo "- Resource group: \`$RESOURCE_GROUP\`"
             echo "- Function App: \`$FUNCTION_APP\`"
             echo "- API: $API_BASE_URL"
+            echo "- Home Story smoke: \`$STORY_STATE\`"
             echo '- SwitchBot credentials remain server-side and are not managed by this workflow.'
           } >> "$GITHUB_STEP_SUMMARY"
