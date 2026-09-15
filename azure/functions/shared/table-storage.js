@@ -130,6 +130,7 @@ function readingEntity(reading, rowKey) {
     temperature: reading.temperature,
     humidity: reading.humidity,
     ...(reading.battery === undefined ? {} : { battery: reading.battery }),
+    ...(reading.co2 === undefined ? {} : { co2: reading.co2 }),
     observedAt: reading.observedAt,
     collectedAt: reading.collectedAt,
     sourceTimestampKind: reading.sourceTimestampKind,
