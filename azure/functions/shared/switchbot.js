@@ -46,6 +46,15 @@ function validateStatusBody(body) {
   ) {
     throw new Error("SwitchBot response contains an invalid battery value");
   }
+  if (
+    body.CO2 !== undefined &&
+    (!Number.isInteger(body.CO2) || body.CO2 < 0 || body.CO2 > 9999)
+  ) {
+    throw new Error("SwitchBot response contains an invalid CO2 value");
+  }
+  if (body.deviceType === "MeterPro(CO2)" && body.CO2 === undefined) {
+    throw new Error("SwitchBot Meter Pro CO2 response does not contain a CO2 value");
+  }
 
   return {
     deviceId: String(body.deviceId ?? ""),
@@ -53,6 +62,7 @@ function validateStatusBody(body) {
     temperature: body.temperature,
     humidity: body.humidity,
     ...(body.battery === undefined ? {} : { battery: body.battery }),
+    ...(body.CO2 === undefined ? {} : { co2: body.CO2 }),
   };
 }
 
