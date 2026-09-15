@@ -71,7 +71,7 @@ Azure resources are defined in `infra/main.bicep` and currently include:
 - one private deployment blob container;
 - one Azure Functions Flex Consumption plan and Function App.
 
-The privileged deployment workflow is intentionally not runnable from PR code. The trusted `main` workflow signs in to Azure with GitHub OIDC, deploys the Bicep template, deploys the Functions package, and smoke-tests the workload.
+The privileged deployment workflow is intentionally not runnable from PR code. The trusted `main` workflow signs in to Azure with GitHub OIDC, deploys the Bicep template, deploys the Functions package, and smoke-tests both `/api/latest` and `/api/story`. The Home Story smoke records the explicit HTTP/API state without logging sensor values or credentials.
 
 The fixed Azure client ID, tenant ID, and subscription ID are intentionally committed as public deployment identifiers in the trusted workflow. They identify the personal Azure target and are not authentication secrets. No Azure client secret is used or committed.
 
