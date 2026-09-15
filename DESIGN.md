@@ -1,80 +1,142 @@
 ---
 version: alpha
-name: SwitchBot Home Dashboard
-description: Minimal UI and UX contract for the SwitchBot architecture proof of concept.
+name: SwitchBot Home Story
+description: Mobile-first UI and UX contract for reading what changed in the home today.
 omitted:
-  - section: components
-    reason: The PoC has not demonstrated a repeated product component pattern yet.
+  - section: navigation
+    reason: Home Story v0.1 intentionally has one primary surface; trend/device/scene navigation is deferred until those experiences exist.
+  - section: charts
+    reason: Home Story v0.1 prioritizes narrative events and calm-day ranges over graph-heavy analysis.
 ---
 
 # Design System
 
 ## Overview
 
-Design direction: **a quiet sensor-reading surface where the latest observed value and its observation time are immediately legible, while architecture/debug information stays secondary.**
+Design direction: **a quiet daily story that answers "今日、家で何が起こったか？" with the smallest useful amount of sensor information.**
 
-The primary task is confirming stored sensor state and recent history. The initial UI must not resemble a generic KPI dashboard or spend visual complexity on capabilities that the PoC is not testing.
+The interface is not a traditional IoT dashboard. It should feel like a precise personal log: restrained, fast to scan, and confident enough to leave empty space when nothing important happened.
 
 Information priority:
 
-1. latest stored environmental reading and observation time;
-2. recent history needed to prove persistence and retrieval;
-3. collection/API health or staleness evidence;
-4. implementation/debug metadata only when it helps validate the PoC.
+1. one short factual summary for today;
+2. freshness / last-observation meaning;
+3. a chronological sequence of 0-4 meaningful events;
+4. when there are no meaningful events, a calm-day statement plus compact observed ranges;
+5. implementation/debug metadata only when needed to explain an unavailable state.
 
-The PoC uses a light appearance only. Dark/system appearance is intentionally deferred until the product moves beyond architecture validation.
+## Mobile-first composition
+
+The primary surface is a vertically scrolling reading column.
+
+```text
+Home
+
+今日は空気に変化がありました
+最終観測 19:35 · 3分前
+
+今日
+
+19:35
+CO₂が急低下
+1,120 → 620 ppm
+
+22:10
+今日の最高CO₂
+1,041 ppm
+
+今日 42件の観測から生成
+```
+
+Do not reserve empty slots for events. A quiet day may be materially shorter than an eventful day.
+
+Desktop retains the same focused column with increased surrounding whitespace; it does not expand into a multi-column admin dashboard.
+
+## Story semantics
+
+- Timeline text must describe observed facts, not inferred causes.
+- `CO₂が急低下` is allowed when supported by readings.
+- `換気した`, `帰宅した`, `就寝中` or similar causal/context claims are not allowed without another data source proving them.
+- Time-of-day wording derived directly from timestamps is acceptable.
+- A calm day is a positive valid state, not an empty state.
+- No-data, stale, and backend-error states must be written distinctly from calm-day copy.
 
 ## Colors
 
-- Use neutral background, foreground, muted-text, and border roles.
-- Introduce semantic success/warning/error roles only when live collection states exist.
-- Never use color alone to indicate stale, failed, or healthy collection state.
-- Decorative gradients, glows, and unrelated accent colors are out of scope for the PoC.
+- Use the existing neutral background, foreground, muted-text, and border roles as the default visual system.
+- Keep the timeline marker neutral in v0.1; do not create a rainbow metric legend without a real need.
+- Semantic warning/error color may be introduced later, but status meaning must always be written in text.
+- No decorative gradients, glowing charts, photo backgrounds, or lifestyle illustration.
 
 ## Typography
 
-- Use the system sans-serif stack with an explicit `Noto Sans JP` fallback for Japanese/CJK content.
-- Latest sensor values may receive stronger size/weight than labels and timestamps.
-- Metadata and debug evidence remain visually subordinate.
-- Avoid clipped fixed-height labels; representative Japanese text must wrap naturally.
+- Use the system sans-serif stack with explicit `Noto Sans JP` fallback.
+- The daily summary is the strongest type on the page.
+- Event titles are secondary, event values/details are readable body text, and timestamps/metadata are visually subordinate.
+- Use tabular numerals for timestamps and sensor-value transitions where practical.
+- Japanese copy should remain concise and natural; avoid AI-like explanatory paragraphs.
 
-## Layout
+## Layout and spacing
 
-- Prefer a single reading flow over an equal-card dashboard grid.
-- Keep content width constrained on desktop rather than stretching sparse PoC content edge to edge.
-- On narrow screens, preserve the order latest state -> history -> health/debug evidence.
-- Do not hide essential state behind hover-only interaction.
-- No unintended horizontal overflow is acceptable at the Foundation review baselines.
+- Target a narrow reading column (`max-width` roughly 36-40rem) even on desktop.
+- Mobile horizontal padding must remain comfortable at approximately 390px and usable at 320px.
+- Prefer generous vertical whitespace and thin separators over cards and shadows.
+- A single subtle vertical timeline line and small dot are sufficient to establish chronology.
+- No unintended horizontal overflow is acceptable.
 
-## Elevation & Depth
+## Surfaces and shapes
 
-- Use spacing, borders, and surface contrast before shadows.
-- Add a distinct surface only when it clarifies grouping or interaction.
-- Avoid nested card-on-card composition for sparse PoC content.
-
-## Shapes
-
-- Use a small, consistent radius vocabulary only where a bounded surface/control needs it.
-- Avoid pills, icon boxes, and circular decoration without semantic meaning.
+- Default content sits directly on the page background.
+- Use borders/dividers for structure before introducing bounded cards.
+- Calm-day ranges may use a simple divided definition list.
+- Avoid pills, icon boxes, oversized radii, and nested surfaces unless a future interaction justifies them.
 
 ## Components
 
-The Foundation primitive-first profile applies. Tailwind CSS is the styling infrastructure. Add shadcn/ui-style accessible primitives only when a real control such as a dialog, select, menu, or form requires them; native semantic elements are sufficient for the bootstrap page.
+Tailwind CSS remains the styling infrastructure. Semantic native elements are sufficient for v0.1:
 
-Product-specific components should emerge only from repeated real sensor/history behavior.
+- `main`, `header`, `section`, `ol/li`, `time`, `dl/dt/dd`, and text elements;
+- no component library is required for the current non-interactive story surface.
+
+Future `今日 / 傾向` switching should not be built until the trend content and interaction contract are approved.
+
+## State behavior
+
+### Eventful day
+
+- show the daily summary;
+- show freshness;
+- show 1-4 selected story events chronologically;
+- do not append low-value rows simply to fill space.
+
+### Calm day
+
+- show the calm summary;
+- state that there was no large change;
+- show only available daily ranges (CO₂ / temperature / humidity).
+
+### No data / failure
+
+- no data: explicitly say today's observations have not arrived yet;
+- stale: show the stale meaning beside last observation time;
+- backend error: explain that the stored-data path could not be read;
+- never translate any of these into `穏やか` or another valid-sensor judgment.
 
 ## Do's and Don'ts
 
 ### Do
 
-- Make latest data and observation time the first-glance information once live data exists.
-- Display stale/error meaning in text as well as any visual cue.
-- Keep architecture/debug evidence available without letting it dominate normal reading.
-- Validate material UI changes at approximately 1440px, 390px, and 320px, including keyboard focus and Japanese wrapping.
+- let chronology and typography carry the experience;
+- allow the page height to vary naturally with event density;
+- keep sensor transitions concise (`742 → 510 ppm`, `+1.3℃`);
+- validate rendered UI at approximately 1440px, 390px, and 320px, including Japanese wrapping and semantic status;
+- keep the browser read path independent of SwitchBot latency.
 
 ### Don't
 
-- Do not copy the SwitchBot app's visual language.
-- Do not create equal KPI cards for every field merely to fill a dashboard.
-- Do not add charts, motion, gradients, or rich controls before an Issue requires them.
-- Do not treat the bootstrap placeholder as the final dashboard composition.
+- do not copy the SwitchBot app's visual language;
+- do not create an equal KPI-card grid;
+- do not add decorative hero imagery or wellness-style marketing copy;
+- do not add charts merely because time-series data exists;
+- do not invent a fixed daily event count;
+- do not add navigation for future experiences before those experiences exist.
