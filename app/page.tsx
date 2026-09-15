@@ -1,101 +1,54 @@
-import { getDashboardState, type SensorReading } from "@/lib/backend";
+import { getDashboardState, type StoryMetricRange } from "@/lib/backend";
 
 export const dynamic = "force-dynamic";
 
-const dateTime = new Intl.DateTimeFormat("ja-JP", {
+const timeOnly = new Intl.DateTimeFormat("ja-JP", {
   timeZone: "Asia/Tokyo",
-  month: "2-digit",
-  day: "2-digit",
   hour: "2-digit",
   minute: "2-digit",
-  second: "2-digit",
+  hour12: false,
 });
 
-function formatObservedAt(value: string) {
+function formatTime(value: string) {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : dateTime.format(date);
+  return Number.isNaN(date.getTime()) ? value : timeOnly.format(date);
 }
 
-function ReadingValues({ reading }: { reading: SensorReading }) {
+function relativeFreshness(ageSeconds: number | null, stale: boolean) {
+  if (ageSeconds === null) return "最終観測時刻を確認できません";
+  if (stale) return `${Math.floor(ageSeconds / 60)}分前 · データが古くなっています`;
+  if (ageSeconds < 60) return "たった今";
+  return `${Math.floor(ageSeconds / 60)}分前`;
+}
+
+function RangeRow({
+  label,
+  range,
+  unit,
+  digits = 0,
+}: {
+  label: string;
+  range: StoryMetricRange | null;
+  unit: string;
+  digits?: number;
+}) {
+  if (!range) return null;
   return (
-    <dl className="mt-5 flex flex-wrap items-end gap-x-10 gap-y-4">
-      <div>
-        <dt className="text-sm text-muted">温度</dt>
-        <dd className="mt-1 text-4xl font-semibold tracking-tight sm:text-5xl">
-          {reading.temperature.toFixed(1)}
-          <span className="ml-1 text-xl font-medium">℃</span>
-        </dd>
-      </div>
-      <div>
-        <dt className="text-sm text-muted">湿度</dt>
-        <dd className="mt-1 text-2xl font-semibold">
-          {reading.humidity}
-          <span className="ml-1 text-base font-medium">%</span>
-        </dd>
-      </div>
-      {reading.battery !== undefined ? (
-        <div>
-          <dt className="text-sm text-muted">バッテリー</dt>
-          <dd className="mt-1 text-lg font-medium">{reading.battery}%</dd>
-        </div>
-      ) : null}
-    </dl>
+    <div className="flex items-baseline justify-between gap-6 py-4">
+      <dt className="text-sm text-muted">{label}</dt>
+      <dd className="text-right font-medium tabular-nums">
+        {range.min.toFixed(digits)}–{range.max.toFixed(digits)} {unit}
+      </dd>
+    </div>
   );
 }
 
-function HistoryRows({ readings }: { readings: SensorReading[] }) {
+function EmptyState({ title, body }: { title: string; body: string }) {
   return (
-    <>
-      <ul className="mt-5 divide-y divide-border sm:hidden" aria-label="最近のセンサー履歴">
-        {readings.map((reading) => (
-          <li key={`${reading.deviceId}-${reading.observedAt}`} className="py-4 first:pt-0">
-            <p className="text-sm font-medium">{formatObservedAt(reading.observedAt)}</p>
-            <dl className="mt-2 grid grid-cols-3 gap-x-3 text-sm">
-              <div>
-                <dt className="text-muted">温度</dt>
-                <dd className="mt-1 font-medium">{reading.temperature.toFixed(1)}℃</dd>
-              </div>
-              <div>
-                <dt className="text-muted">湿度</dt>
-                <dd className="mt-1 font-medium">{reading.humidity}%</dd>
-              </div>
-              <div>
-                <dt className="text-muted">バッテリー</dt>
-                <dd className="mt-1 font-medium">
-                  {reading.battery === undefined ? "—" : `${reading.battery}%`}
-                </dd>
-              </div>
-            </dl>
-          </li>
-        ))}
-      </ul>
-
-      <table className="mt-5 hidden w-full border-collapse text-left text-sm sm:table">
-        <thead className="text-muted">
-          <tr className="border-b border-border">
-            <th className="py-2 pr-4 font-medium">観測時刻</th>
-            <th className="px-4 py-2 font-medium">温度</th>
-            <th className="px-4 py-2 font-medium">湿度</th>
-            <th className="py-2 pl-4 font-medium">バッテリー</th>
-          </tr>
-        </thead>
-        <tbody>
-          {readings.map((reading) => (
-            <tr
-              key={`${reading.deviceId}-${reading.observedAt}`}
-              className="border-b border-border/70"
-            >
-              <td className="py-3 pr-4">{formatObservedAt(reading.observedAt)}</td>
-              <td className="px-4 py-3">{reading.temperature.toFixed(1)}℃</td>
-              <td className="px-4 py-3">{reading.humidity}%</td>
-              <td className="py-3 pl-4">
-                {reading.battery === undefined ? "—" : `${reading.battery}%`}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
+    <section className="mt-14 border-t border-border pt-7">
+      <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+      <p className="mt-3 max-w-prose leading-7 text-muted">{body}</p>
+    </section>
   );
 }
 
@@ -103,97 +56,97 @@ export default async function Home() {
   const state = await getDashboardState();
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-3xl px-6 py-14 sm:px-10 sm:py-20">
+    <main className="mx-auto min-h-screen w-full max-w-xl px-5 py-10 sm:px-8 sm:py-14">
       <header>
-        <p className="text-sm font-medium text-muted">Architecture PoC</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-          SwitchBot Home Dashboard
-        </h1>
+        <p className="text-sm font-medium tracking-wide text-muted">Home</p>
       </header>
 
       {state.kind === "web_not_configured" ? (
-        <section className="mt-12 border-t border-border pt-7" aria-labelledby="setup-heading">
-          <h2 id="setup-heading" className="text-xl font-semibold">
-            Web接続設定待ち
-          </h2>
-          <p className="mt-3 leading-7 text-muted">
-            Azure Functions のURLがWeb側へまだ設定されていません。UIはSwitchBotへ直接接続しません。
-          </p>
-        </section>
+        <EmptyState
+          title="Web接続設定待ち"
+          body="Azure Functions のURLがWeb側へまだ設定されていません。UIはSwitchBotへ直接接続しません。"
+        />
       ) : null}
 
       {state.kind === "collector_not_configured" ? (
-        <section className="mt-12 border-t border-border pt-7" aria-labelledby="collector-heading">
-          <h2 id="collector-heading" className="text-xl font-semibold">
-            Azure read path 接続済み
-          </h2>
-          <p className="mt-3 leading-7 text-muted">
-            保存先とWeb APIには到達できています。SwitchBotの収集資格情報をAzure側へ設定すると収集を開始できます。
-          </p>
-        </section>
+        <EmptyState
+          title="収集設定待ち"
+          body="保存先とWeb APIには到達できています。SwitchBotの収集資格情報をAzure側へ設定すると今日のストーリーを作り始めます。"
+        />
       ) : null}
 
       {state.kind === "no_data" ? (
-        <section className="mt-12 border-t border-border pt-7" aria-labelledby="empty-heading">
-          <h2 id="empty-heading" className="text-xl font-semibold">
-            収集データ待ち
-          </h2>
-          <p className="mt-3 leading-7 text-muted">
-            Collectorは設定済みですが、まだ有効なセンサーデータが保存されていません。
-          </p>
-        </section>
+        <EmptyState
+          title="今日のデータ待ち"
+          body="Collectorは設定済みですが、今日はまだ有効な観測データがありません。データが届くまで、安定した日としては扱いません。"
+        />
       ) : null}
 
       {state.kind === "error" ? (
-        <section className="mt-12 border-t border-border pt-7" aria-labelledby="error-heading">
-          <h2 id="error-heading" className="text-xl font-semibold">
-            保存済みデータを取得できません
-          </h2>
-          <p className="mt-3 leading-7 text-muted">{state.message}</p>
-        </section>
+        <EmptyState title="今日のストーリーを取得できません" body={state.message} />
       ) : null}
 
       {state.kind === "ready" ? (
         <>
-          <section className="mt-12 border-t border-border pt-7" aria-labelledby="latest-heading">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-              <h2 id="latest-heading" className="text-xl font-semibold">
-                最新の記録
-              </h2>
-              <p className="text-sm text-muted">
-                {state.freshness.stale ? "古いデータです" : "最新性は正常です"}
-              </p>
-            </div>
-            <ReadingValues reading={state.latest} />
-            <p className="mt-5 text-sm text-muted">
-              観測 {formatObservedAt(state.latest.observedAt)}
-              {state.freshness.ageSeconds !== null
-                ? ` · ${Math.floor(state.freshness.ageSeconds / 60)}分前`
-                : ""}
+          <section className="mt-6" aria-labelledby="story-summary">
+            <h1
+              id="story-summary"
+              className="max-w-[18ch] text-[2rem] font-semibold leading-[1.25] tracking-tight sm:text-4xl"
+            >
+              {state.story.summary}
+            </h1>
+            <p className="mt-3 text-sm text-muted">
+              最終観測 {formatTime(state.story.latestObservedAt)} ·{" "}
+              {relativeFreshness(state.freshness.ageSeconds, state.freshness.stale)}
             </p>
           </section>
 
-          <section className="mt-12 border-t border-border pt-7" aria-labelledby="history-heading">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-              <h2 id="history-heading" className="text-xl font-semibold">
-                最近の履歴
+          {state.story.kind === "events" ? (
+            <section className="mt-14" aria-labelledby="today-heading">
+              <h2 id="today-heading" className="text-sm font-medium text-muted">
+                今日
               </h2>
-              <p className="text-sm text-muted">
-                24時間 · {state.historyCount}件
-                {state.historyCount > 12 ? "中 直近12件を表示" : ""}
-              </p>
-            </div>
+              <ol className="relative mt-7 ml-1 border-l border-border">
+                {state.story.events.map((event) => (
+                  <li key={`${event.type}-${event.occurredAt}`} className="relative pb-10 pl-7 last:pb-0">
+                    <span
+                      className="absolute top-1.5 -left-[5px] h-2.5 w-2.5 rounded-full bg-foreground ring-4 ring-background"
+                      aria-hidden="true"
+                    />
+                    <time
+                      dateTime={event.occurredAt}
+                      className="text-xs font-medium tabular-nums text-muted"
+                    >
+                      {formatTime(event.occurredAt)}
+                    </time>
+                    <h3 className="mt-2 text-lg font-semibold tracking-tight">{event.title}</h3>
+                    <p className="mt-1 text-base tabular-nums text-muted">{event.detail}</p>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ) : (
+            <section className="mt-14" aria-labelledby="calm-heading">
+              <h2 id="calm-heading" className="text-sm font-medium text-muted">
+                今日
+              </h2>
+              <p className="mt-7 text-lg font-medium">大きな変化はありませんでした</p>
+              <dl className="mt-8 divide-y divide-border border-y border-border">
+                <RangeRow label="CO₂" range={state.story.stats.co2} unit="ppm" />
+                <RangeRow
+                  label="温度"
+                  range={state.story.stats.temperature}
+                  unit="℃"
+                  digits={1}
+                />
+                <RangeRow label="湿度" range={state.story.stats.humidity} unit="%" />
+              </dl>
+            </section>
+          )}
 
-            {state.historyError ? (
-              <p className="mt-4 leading-7 text-muted">
-                最新値は取得できましたが、履歴の読み取りに失敗しました。
-              </p>
-            ) : state.history.length === 0 ? (
-              <p className="mt-4 leading-7 text-muted">表示できる履歴はまだありません。</p>
-            ) : (
-              <HistoryRows readings={state.history.slice(0, 12)} />
-            )}
-          </section>
+          <footer className="mt-16 border-t border-border pt-5 text-xs text-muted">
+            今日 {state.story.observations}件の観測から生成
+          </footer>
         </>
       ) : null}
     </main>
