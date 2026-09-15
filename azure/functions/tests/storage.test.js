@@ -34,10 +34,11 @@ test("retries upsert the same history entity instead of creating a second identi
   };
   const base = {
     deviceId: "ABC123",
-    deviceType: "MeterPlus",
+    deviceType: "MeterPro(CO2)",
     temperature: 24.6,
     humidity: 51,
     battery: 100,
+    co2: 742,
     collectedAt: "2026-09-14T12:01:00.000Z",
     sourceTimestampKind: "collector",
   };
@@ -46,9 +47,10 @@ test("retries upsert the same history entity instead of creating a second identi
   await saveReading({ ...base, observedAt: "2026-09-14T12:04:00.000Z" }, { config, fetchImpl });
 
   assert.equal(requests.length, 4);
-  const historyUrls = requests.filter((request) => request.url.includes("SensorReadings"));
-  assert.equal(historyUrls.length, 2);
-  assert.equal(historyUrls[0].url, historyUrls[1].url);
+  const historyRequests = requests.filter((request) => request.url.includes("SensorReadings"));
+  assert.equal(historyRequests.length, 2);
+  assert.equal(historyRequests[0].url, historyRequests[1].url);
+  assert.equal(JSON.parse(historyRequests[0].options.body).co2, 742);
   assert.ok(requests.every((request) => request.options.method === "PUT"));
 });
 

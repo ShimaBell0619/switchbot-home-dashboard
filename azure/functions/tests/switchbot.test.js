@@ -51,6 +51,43 @@ test("accepts a successful environmental sensor response", async () => {
   assert.ok(calls[0].options.headers.nonce);
 });
 
+test("normalizes Meter Pro CO2 from the documented uppercase CO2 field", () => {
+  const reading = validateStatusBody({
+    deviceId: "ABC123",
+    deviceType: "MeterPro(CO2)",
+    temperature: 24.5,
+    humidity: 50,
+    battery: 98,
+    CO2: 742,
+  });
+
+  assert.equal(reading.co2, 742);
+  assert.equal(reading.temperature, 24.5);
+  assert.equal(reading.humidity, 50);
+});
+
+test("rejects a Meter Pro CO2 response without a valid CO2 reading", () => {
+  assert.throws(
+    () =>
+      validateStatusBody({
+        deviceType: "MeterPro(CO2)",
+        temperature: 24.5,
+        humidity: 50,
+      }),
+    /CO2 value/,
+  );
+  assert.throws(
+    () =>
+      validateStatusBody({
+        deviceType: "MeterPro(CO2)",
+        temperature: 24.5,
+        humidity: 50,
+        CO2: 10_000,
+      }),
+    /invalid CO2/,
+  );
+});
+
 test("rejects SwitchBot application-level failures even when HTTP succeeds", async () => {
   await assert.rejects(
     fetchSensorStatus({

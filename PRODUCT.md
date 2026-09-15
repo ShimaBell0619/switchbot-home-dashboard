@@ -2,64 +2,70 @@
 
 ## 1. Purpose
 
-`switchbot-home-dashboard` is a personal web dashboard for reading SwitchBot home-sensor data from application-owned storage instead of waiting for the SwitchBot UI to load historical data.
+`switchbot-home-dashboard` is a personal web experience for understanding what changed in the home today from SwitchBot environmental sensor data stored by the application.
 
-The initial objective is an architecture proof of concept: prove that sensor readings can be collected in the background, persisted, queried, and rendered through a minimal web UI with the read path independent of SwitchBot API latency.
+The architecture PoC is proven. The current product focus is **Home Story**: turn background observations into a small, deterministic daily narrative rather than reproducing a device dashboard or exposing a raw history table.
 
-## 2. Users and primary jobs
+## 2. User and primary jobs
 
 The initial user is the repository owner.
 
 Primary jobs:
 
-- confirm the latest collected sensor state quickly;
-- inspect recently collected historical readings;
-- verify that the end-to-end collection and read architecture works in deployed environments.
+- understand at a glance whether the home environment has been calm or changed meaningfully today;
+- see a small number of important sensor changes in chronological order;
+- distinguish a genuinely stable day from missing, stale, or failed collection;
+- review facts derived from stored observations without waiting on the SwitchBot API during page load.
 
 ## 3. Core behaviors
 
-For the PoC:
-
 - SwitchBot sensor readings are collected by backend infrastructure rather than by browser page load.
-- Collected readings are persisted with an observation timestamp.
-- The web read path obtains latest/history data from application-owned persistence, not directly from SwitchBot.
+- Collected readings are persisted with an observation timestamp in application-owned storage.
+- The selected Meter Pro (CO2) reading includes temperature, humidity, battery, and CO₂ when provided by the validated upstream status response.
+- A deterministic story engine derives at most a few meaningful events from the current JST calendar day.
+- Nearby duplicate changes are consolidated instead of producing noisy log entries.
+- The UI does not force a fixed event count.
+- A stable day produces an intentional calm-day summary and observed ranges rather than fabricated events.
+- Story copy describes only facts supported by observations. It must not claim causes such as ventilation, presence, sleep, or return-home activity without a source that proves them.
+- Collection/read failures and stale data remain distinguishable from valid unchanged readings.
 - SwitchBot credentials remain server-side and are never included in browser-delivered code or responses.
-- Collection and read failures are distinguishable from valid sensor data; stale data must not be presented as newly observed data.
 
 ## 4. Product constraints
 
-- This is a single-owner, cloud-connected PoC.
-- The approved PoC architecture is documented in `docs/ARCHITECTURE.md`.
-- The initial UI is intentionally minimal; architecture validation takes priority over visual richness.
-- The unauthenticated PoC may expose only low-sensitivity environmental sensor data selected for the test. Lock state, occupancy/security events, device-control capability, or similarly sensitive home data must not be exposed without an explicit authentication/authorization decision.
-- The product cannot reconstruct historical readings from before collection begins unless a supported upstream history source is introduced later.
-- SwitchBot API usage must respect the upstream service limits and failure behavior.
+- This is a single-owner, cloud-connected personal application.
+- The approved backend architecture is documented in `docs/ARCHITECTURE.md`.
+- The primary UI is mobile-first and vertically read; desktop keeps the same focused reading column rather than becoming a dense control dashboard.
+- The current unauthenticated surface may expose only the approved low-sensitivity environmental data. Security/public-surface hardening is intentionally deferred from Home Story Issue #11 and must be handled separately.
+- The product cannot reconstruct historical readings from before application collection began unless a supported upstream history source is introduced later.
+- SwitchBot API usage must respect upstream limits and failure behavior.
 - No retention/deletion policy is approved yet; do not introduce automated deletion or archival without a product decision.
 
-## 5. Non-goals
+## 5. Non-goals for Home Story v0.1
 
-The initial PoC does not include:
-
-- device control;
+- device control or manual scenes;
 - Webhook ingestion;
 - authentication or multi-user accounts;
-- rich visualization, analytics, recommendations, or notifications;
+- LLM-generated summaries;
+- graph-heavy analytics dashboards;
+- multi-room or multi-device information architecture;
+- `今日 / 傾向` tabs before the trend experience has real content and an approved design;
 - importing existing SwitchBot app history;
 - broad smart-home vendor support.
 
-## 6. Acceptance boundaries
+## 6. Home Story acceptance boundaries
 
-The architecture may be called proven only after:
+Home Story is successful when:
 
-- at least one real SwitchBot sensor can be collected on a schedule;
-- timestamped readings persist in the approved Azure storage;
-- latest and bounded-history reads succeed through the backend API;
-- the deployed web UI renders those stored values without making a browser-side SwitchBot API call;
-- SwitchBot credentials are absent from browser bundles and responses;
-- failure/staleness behavior is observable enough to distinguish an upstream collection problem from a valid unchanged reading.
+- current-day observations can be reduced to deterministic, explainable events;
+- meaningful changes are shown without duplicate noise;
+- stable observations result in a calm-day experience rather than an empty or invented story;
+- no-data, stale, and backend-error states are semantically distinct;
+- the production mobile UI is centered on the daily narrative, not raw metric cards or history tables;
+- the browser still reads application-owned backend data and never calls SwitchBot directly.
 
 ## 7. Evolution rules
 
-- Do not silently expand the PoC into device control, security/occupancy monitoring, authentication, or a multi-vendor platform.
-- If implementation pressure conflicts with this contract, raise the conflict before changing the product behavior.
+- New story claims require a data source that can support the claim.
+- Trend views should be added only after enough persisted data exists to make comparisons useful.
+- Device control, security/occupancy monitoring, authentication, new sensitive data classes, or a multi-vendor platform remain explicit product decisions rather than implicit scope expansion.
 - Keep historical decisions in Issues/PRs and keep current approved behavior here.

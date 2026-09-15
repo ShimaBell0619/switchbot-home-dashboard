@@ -2,6 +2,7 @@ const { app } = require("@azure/functions");
 const collector = require("../collectSensor");
 const history = require("../history");
 const latest = require("../latest");
+const story = require("../story");
 
 function legacyContext(context) {
   return {
@@ -28,6 +29,12 @@ async function historyHandler(request, context) {
   return handlerContext.res;
 }
 
+async function storyHandler(request, context) {
+  const handlerContext = legacyContext(context);
+  await story(handlerContext, request);
+  return handlerContext.res;
+}
+
 app.timer("collectSensor", {
   schedule: "0 */5 * * * *",
   runOnStartup: false,
@@ -49,8 +56,16 @@ app.http("history", {
   handler: historyHandler,
 });
 
+app.http("story", {
+  methods: ["GET"],
+  authLevel: "anonymous",
+  route: "story",
+  handler: storyHandler,
+});
+
 module.exports = {
   collectSensorHandler,
   historyHandler,
   latestHandler,
+  storyHandler,
 };
