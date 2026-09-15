@@ -62,10 +62,11 @@ test("collector persists a validated reading with explicit collector time", asyn
     now: () => new Date("2026-09-14T12:00:00.000Z"),
     fetchSensorStatusFn: async () => ({
       deviceId: "ABC123",
-      deviceType: "MeterPlus",
+      deviceType: "MeterPro(CO2)",
       temperature: 24.6,
       humidity: 51,
       battery: 100,
+      co2: 742,
     }),
     saveReadingFn: async (reading) => {
       saved = reading;
@@ -77,4 +78,5 @@ test("collector persists a validated reading with explicit collector time", asyn
   assert.equal(saved.observedAt, "2026-09-14T12:00:00.000Z");
   assert.equal(saved.collectedAt, "2026-09-14T12:00:00.000Z");
   assert.equal(saved.sourceTimestampKind, "collector");
+  assert.equal(saved.co2, 742);
 });
