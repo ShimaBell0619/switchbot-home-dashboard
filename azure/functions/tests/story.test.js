@@ -33,6 +33,19 @@ test("stable readings produce a calm story without invented events", () => {
   assert.deepEqual(story.stats.co2, { min: 610, max: 640 });
 });
 
+test("one meaningful change stays one event instead of padding the story", () => {
+  const rows = [
+    reading("2026-09-15T01:00:00.000Z", { temperature: 26.4, humidity: 55 }),
+    reading("2026-09-15T01:45:00.000Z", { temperature: 27.6, humidity: 55 }),
+  ];
+
+  const story = createHomeStory(rows, now);
+
+  assert.equal(story.kind, "events");
+  assert.equal(story.events.length, 1);
+  assert.equal(story.events[0].type, "temperature_rise");
+});
+
 test("adjacent rapid CO2 rises consolidate to the strongest event", () => {
   const rows = [
     reading("2026-09-15T01:00:00.000Z", { co2: 500 }),
@@ -59,6 +72,22 @@ test("high CO2 requires sustained observations and does not add a nearby peak du
 
   assert.equal(events.filter((event) => event.type === "co2_high").length, 1);
   assert.equal(events.filter((event) => event.type === "co2_peak").length, 0);
+});
+
+test("an eventful day is capped at four selected story events", () => {
+  const rows = [
+    reading("2026-09-15T01:00:00.000Z", { co2: 500, temperature: 25, humidity: 50 }),
+    reading("2026-09-15T01:20:00.000Z", { co2: 800, temperature: 25.2, humidity: 50 }),
+    reading("2026-09-15T01:40:00.000Z", { co2: 1050, temperature: 26.3, humidity: 59 }),
+    reading("2026-09-15T01:45:00.000Z", { co2: 1100, temperature: 26.4, humidity: 59 }),
+    reading("2026-09-15T01:50:00.000Z", { co2: 1150, temperature: 26.5, humidity: 59 }),
+    reading("2026-09-15T02:20:00.000Z", { co2: 700, temperature: 26.5, humidity: 48 }),
+  ];
+
+  const events = detectStoryEvents(rows);
+
+  assert.equal(events.length, 4);
+  assert.ok(events.every((event, index) => index === 0 || events[index - 1].occurredAt <= event.occurredAt));
 });
 
 test("legacy readings without CO2 still support temperature and humidity story data", () => {
