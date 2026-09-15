@@ -117,7 +117,7 @@ export default async function Home() {
                       dateTime={event.occurredAt}
                       className="text-xs font-medium tabular-nums text-muted"
                     >
-                      {formatTime(event.occurredAt)}
+                      {formatTime(event.occurredAt)}頃
                     </time>
                     <h3 className="mt-2 text-lg font-semibold tracking-tight">{event.title}</h3>
                     <p className="mt-1 text-base tabular-nums text-muted">{event.detail}</p>
