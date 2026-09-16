@@ -34,8 +34,8 @@ Matching routes are additive. Do not create empty documents merely to fill a rou
 - Use the Foundation v0.10.0 context-routed Chat implementation method for material work: session-local Repository Context Packet, Design Intent, Implementation Map, coherent implementation batch, focused/full validation, self-review, correction, re-review, and final validation.
 - Issue-driven development is the default. Use a short-lived branch from the observed base SHA and Conventional Commit-style PR titles.
 - Prefer the smallest coherent implementation. Do not add generic IoT abstractions, event buses, repositories, state-management libraries, or provider adapters before the PoC needs them.
-- The approved backend path is SwitchBot -> Azure Container Apps scheduled collector -> Azure Table Storage -> scale-to-zero Container App read API -> Next.js/Vercel. A different persistence provider, new external integration, device-control capability, authentication/authorization model, new sensitive data class, destructive migration, retention policy, or recurring-cost architecture change requires explicit approval.
-- Never expose SwitchBot Token/Secret or Azure privileged credentials to browser code. Do not commit secrets.
+- The approved backend path is SwitchBot -> Azure Container Apps scheduled collector -> Azure Table Storage -> Next.js/Vercel server-side read -> browser. A different persistence provider, new external integration, device-control capability, authentication/authorization model, new sensitive data class, destructive migration, retention policy, or recurring-cost architecture change requires explicit approval.
+- Never expose SwitchBot Token/Secret, Azure privileged credentials, or Table SAS values to browser code. Do not commit secrets.
 
 ## UI rules
 
@@ -49,6 +49,7 @@ Matching routes are additive. Do not create empty documents merely to fill a rou
 ## Integration and data rules
 
 - Browser rendering must not depend on a direct SwitchBot Open API request.
+- Browser code must not call Azure Table Storage directly; Table access belongs to the Next.js server runtime or approved Azure backend workloads.
 - Treat SwitchBot as an external trust boundary: validate HTTP/API success separately from the API response body status and handle upstream failure without writing fabricated readings.
 - Persist the upstream observation time when available; otherwise record the collector observation time explicitly. Do not silently replace stale upstream data with a fresh timestamp.
 - Make collection idempotent for the chosen reading identity before increasing retry frequency or adding Webhooks.
