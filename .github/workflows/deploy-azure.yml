@@ -25,7 +25,8 @@ jobs:
     timeout-minutes: 1
     steps:
       - name: Authorize exact deployment request
-        run: echo "Authorized /deploy-azure for Issue #15 from repository owner."
+        run: |
+          echo "Authorized /deploy-azure for Issue #15 from repository owner."
 
   deploy:
     needs: authorize-deploy
@@ -240,6 +241,9 @@ jobs:
           client-id: ${{ env.AZURE_CLIENT_ID }}
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure Container Apps CLI support
+        run: az extension add --name containerapp --upgrade --only-show-errors
 
       - name: Verify Container Apps replacement exists
         shell: bash
