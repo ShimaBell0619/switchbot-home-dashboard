@@ -39,7 +39,7 @@ export type DashboardState =
 type ApiBody = Record<string, unknown>;
 
 function apiBaseUrl(env = process.env) {
-  return String(env.AZURE_BACKEND_BASE_URL ?? env.AZURE_FUNCTIONS_BASE_URL ?? "")
+  return String(env.AZURE_BACKEND_BASE_URL ?? "")
     .trim()
     .replace(/\/+$/, "");
 }
