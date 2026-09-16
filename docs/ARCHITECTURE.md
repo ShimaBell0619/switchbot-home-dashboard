@@ -6,6 +6,8 @@ The architecture PoC is proven: SwitchBot environmental readings can be collecte
 
 The current product layer adds **Home Story** on top of that path. Home Story deterministically reduces the current JST calendar day's stored observations into a small factual narrative for the mobile UI.
 
+Issue #21 simplifies the read path by removing the scale-to-zero Azure Container App HTTP API. The Next.js server runtime reads the persisted Table Storage history directly with a read-only table-scoped SAS. Browser code still receives neither Azure credentials nor direct Table access.
+
 ## Approved target topology
 
 ```text
@@ -21,42 +23,46 @@ Azure Table Storage
 - CurrentState
 - SensorReadings
         ^
-        |
-Azure Container App
-scale-to-zero HTTP read API
-- GET /api/latest
-- GET /api/history
-- GET /api/story
-        ^
+        | server-side HTTPS + read-only table SAS
         |
 Next.js on Vercel
-mobile-first Home Story UI
+- read stored history
+- generate Home Story
+- render mobile-first UI
+        |
+        v
+Browser
 ```
 
 Collection and read responsibilities remain intentionally separated. A slow or unavailable SwitchBot API must not block reads of already-collected data.
 
+During the Issue #21 cutover, the existing Container App read API remains available only as a rollback path. Next.js prefers direct Table Storage whenever all direct-read settings are present; the API fallback is removed after Production direct-read verification.
+
 ## Runtime and deployment
 
-- The backend image uses Node.js 24 and is shared by the HTTP API and scheduled collector job.
-- The API runs as an Azure Container App with external HTTPS ingress, `minReplicas: 0`, and `maxReplicas: 1`.
+- The collector image uses Node.js 24.
 - The collector runs as an Azure Container Apps scheduled Job every five minutes with one replica and one completion.
-- Both workloads use 0.25 vCPU and 0.5 GiB memory for the PoC.
+- The collector uses 0.25 vCPU and 0.5 GiB memory for the PoC.
 - The Container Apps Environment has no VNet integration and no Log Analytics workspace/destination.
-- The image is published from the trusted deployment workflow to GHCR with an immutable commit-SHA tag. ACR is deliberately excluded to avoid a registry fixed cost.
+- The collector image is published from the trusted deployment workflow to GHCR with an immutable commit-SHA tag. ACR is deliberately excluded to avoid a registry fixed cost.
 - The workload keeps one Standard_LRS Storage Account in Japan East for application-owned Table Storage.
-- `infra/main.bicep` owns the Azure workload resources.
+- `infra/main.bicep` owns the Azure collector workload resources.
 - Application Insights, Key Vault, VNet integration, private endpoints, queues/event buses, and additional data stores remain deliberately excluded.
 - Azure deployment is privileged and runs only from trusted `main` through the owner-triggered deployment path.
 - GitHub -> Azure authentication uses OIDC. No Azure client secret is introduced.
+- Vercel Git Integration owns the web deployment. Direct Table credentials exist only as server-side Production environment variables and are never committed.
 
 ## Responsibilities
 
 ### Next.js / Vercel
 
 - Render Home Story as a dynamic Server Component.
-- Read story data only from the application backend through the server-side `AZURE_BACKEND_BASE_URL` setting.
-- Hold no SwitchBot credentials or Azure Storage credentials.
-- Do not perform background collection or story inference in the browser.
+- Read `SensorReadings` directly from Azure Table Storage only from the server runtime.
+- Use a read-only SAS scoped to the history table; never use a Storage account key or write-capable SAS.
+- Generate Home Story server-side from the bounded stored history.
+- Hold no SwitchBot Token/Secret.
+- Never expose the Table SAS through `NEXT_PUBLIC_*`, browser bundles, API responses, logs, fixtures, screenshots, or repository content.
+- Do not perform background collection in the browser or Vercel request path.
 - Do not make browser-side requests to SwitchBot or Azure Table Storage.
 - Keep no-data, stale, and backend-error states distinct from a valid calm day.
 
@@ -70,20 +76,22 @@ The SwitchBot status endpoint does not provide an upstream observation timestamp
 
 The scheduled job exits non-zero on missing configuration or collection/persistence failure so a failed execution is visible as failed instead of silently succeeding.
 
-### HTTP read API
+### Server read path
 
-The Container App exposes the existing response contracts:
+The Next.js server queries at most 288 rows from `SensorReadings`, filtered to the selected device partition, and generates the existing Home Story response state in-process.
 
-- `GET /api/latest` returns the latest stored reading and freshness metadata;
-- `GET /api/history?window=1h|6h|24h` returns bounded recent history;
-- `GET /api/story` returns the current JST day's deterministic Home Story and freshness metadata;
-- `GET /healthz` reports process readiness without reading SwitchBot or Storage.
+The direct read path preserves the existing semantics:
 
-The API never receives SwitchBot Token/Secret and has read-only Table SAS permissions.
+- valid current-day observations return a generated Home Story and freshness metadata;
+- no observations for the current JST day produce `no_data`;
+- storage/query/story failures produce a separate backend error state;
+- no failure path fabricates a calm day or zero/default sensor values.
+
+No public Azure read API is required in the target topology.
 
 ### Home Story engine
 
-`shared/story.js` owns deterministic story selection. It does not use an LLM.
+The shared deterministic story logic owns story selection. It does not use an LLM.
 
 For each request, the engine:
 
@@ -108,20 +116,20 @@ These thresholds are product heuristics, not medical/safety standards. Story tex
 A valid stable day and a missing-data day are different states:
 
 - stable observations -> `calm` story with observed min/max ranges;
-- no observations for the current JST day -> `404 no_data`;
-- storage/generation failure -> `502 backend_error`.
+- no observations for the current JST day -> `no_data`;
+- storage/generation failure -> `backend_error` UI state.
 
 ## Azure Table Storage
 
-Use two tables because the read patterns are different.
+Use two tables because the write/read patterns are different.
 
-`CurrentState` provides a point read for the latest known device state.
+`CurrentState` provides a point representation of the latest known device state and remains maintained by the collector.
 
 - `PartitionKey`: device ID
 - `RowKey`: `current`
 - fields: device type, temperature, humidity, optional battery, optional CO₂, `observedAt`, `collectedAt`, and timestamp-source meaning
 
-`SensorReadings` stores timestamped history.
+`SensorReadings` stores timestamped history and is the only table required by the current Home Story read path.
 
 - `PartitionKey`: device ID
 - `RowKey`: a 13-digit inverted UTC timestamp derived from the start of the five-minute observation bucket
@@ -131,7 +139,7 @@ The inverted RowKey makes newer readings sort before older readings inside a dev
 
 Persistence writes history first and updates `CurrentState` only after the history upsert succeeds. A failed SwitchBot request performs no storage write.
 
-The history API accepts only the fixed `1h`, `6h`, and `24h` windows, queries at most 288 entities, and filters to the requested recent window before responding. The story endpoint reuses the same bounded 288-row read.
+The Next.js read path queries at most 288 history entities. The story engine then filters those observations to the current JST day.
 
 No automatic retention, archival, or deletion policy is approved yet.
 
@@ -140,31 +148,32 @@ No automatic retention, archival, or deletion policy is approved yet.
 The workload continues to avoid Azure RBAC role-assignment creation because `roleAssignments/write` is outside the proven deployer boundary.
 
 - The scheduled collector receives table-scoped service SAS tokens with add/update permissions only.
-- The HTTP API receives separate table-scoped service SAS tokens with read permission only.
-- SAS values live only in Container Apps secrets and are never returned by the API or exposed to Vercel/browser code.
-- Bicep redeployment rotates these table SAS values. The current workload keeps a one-year SAS expiry; long-lived credential rotation remains a hardening item.
+- The Next.js server receives a separate `SensorReadings` table-scoped service SAS with read permission only.
+- The Vercel SAS must be stored as a Sensitive Production environment variable and must never be committed or exposed to browser code.
+- SAS values remain independent of SwitchBot credentials; Vercel never receives SwitchBot Token/Secret.
+- The current SAS model is appropriate for the PoC; credential rotation remains a hardening item.
 
-A later production design should prefer managed identity plus data-plane RBAC if the deployment identity receives the explicit role-assignment capability required to provision that model safely.
+A later production design should prefer workload identity federation plus data-plane RBAC if the required Azure role-assignment boundary is explicitly approved and provisionable.
 
 ## Trust boundaries and secrets
 
 SwitchBot is an external API trust boundary. The collector owns authentication/signing and validation.
 
 - Store SwitchBot Token/Secret only in the Container Apps Job secrets or a future approved secret store.
-- The HTTP API does not receive SwitchBot Token/Secret.
-- Never place SwitchBot credentials in Vercel environment variables, browser bundles, API responses, logs, fixtures, screenshots, or committed files.
+- Vercel receives only the minimum server-side Table read settings required for Home Story.
+- Never place SwitchBot credentials or Table SAS values in browser code, API responses, logs, fixtures, screenshots, or committed files.
 - Treat HTTP success and SwitchBot response status as separate validation signals.
 - Persist only validated readings; upstream errors must not become fabricated sensor records.
 
-The current read surface remains intentionally unauthenticated while security/public-surface hardening is deferred. Only the approved low-sensitivity environmental values may be exposed.
+The current public UI remains intentionally unauthenticated while security/public-surface hardening is deferred. Only the approved low-sensitivity environmental values may be rendered.
 
 ## Failure and freshness behavior
 
 - A failed collection attempt leaves the previous valid `CurrentState` and existing history intact.
 - Missing collector configuration fails the scheduled job; it is not represented as sensor data.
-- A configured backend with no successful current-day observation returns `404 no_data` from the story endpoint.
-- A storage/read/story failure returns a separate backend-error response and never a fabricated calm day or zero/default reading.
-- Successful story responses contain freshness metadata derived from the latest observation. The default stale threshold is 900 seconds.
+- A configured read path with no successful current-day observation returns the `no_data` UI state.
+- A Table Storage read/story failure returns a separate backend-error UI state and never a fabricated calm day or zero/default reading.
+- Successful story state contains freshness metadata derived from the latest observation. The default stale threshold is 900 seconds.
 - The UI states stale/error meaning in text instead of relying on color.
 - History writes remain idempotent for the five-minute observation identity.
 
@@ -181,4 +190,4 @@ The current read surface remains intentionally unauthenticated while security/pu
 - automatic retention/archival;
 - Application Insights and additional operational telemetry services;
 - ACR and Log Analytics for this PoC;
-- managed-identity table authorization until the deployment RBAC boundary is explicitly proven.
+- managed-identity/workload-identity table authorization until the deployment RBAC boundary is explicitly proven.
