@@ -3,7 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const foundationSha = "007352e15fcc6f9620686d3b77e11e85341eac02";
-const azureFunctionsBaseUrl = "https://func-switchbot-bnmrxfo7.azurewebsites.net";
+const azureBackendBaseUrl =
+  "https://ca-switchbot-api-jpe-01.proudwater-95fdbc7b.japaneast.azurecontainerapps.io";
 
 test("Vercel deploys only production and trusted synthetic preview refs", async () => {
   const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
@@ -19,7 +20,7 @@ test("Vercel server-rendered UI is wired only to the public Azure read API targe
   const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
 
   assert.deepEqual(vercel.env, {
-    AZURE_FUNCTIONS_BASE_URL: azureFunctionsBaseUrl,
+    AZURE_BACKEND_BASE_URL: azureBackendBaseUrl,
   });
 });
 
