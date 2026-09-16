@@ -6,10 +6,18 @@ on:
 
 permissions: {}
 
+env:
+  AZURE_CLIENT_ID: 803efb43-a00d-4113-8020-8c88996c7841
+  AZURE_TENANT_ID: 68bc9518-b4ee-443a-abbf-9a642a0a8735
+  AZURE_SUBSCRIPTION_ID: 82615ba2-5bd4-401d-b054-50df1e0e0333
+  RESOURCE_GROUP: rg-switchbot-poc-jpe-01
+  LOCATION: japaneast
+  IMAGE_NAME: ghcr.io/shimabell0619/switchbot-home-dashboard-backend
+
 jobs:
-  authorize:
+  authorize-deploy:
     if: >-
-      ${{ github.event.issue.number == 3 &&
+      ${{ github.event.issue.number == 15 &&
           !github.event.issue.pull_request &&
           github.event.comment.body == '/deploy-azure' &&
           github.event.comment.author_association == 'OWNER' }}
@@ -17,30 +25,50 @@ jobs:
     timeout-minutes: 1
     steps:
       - name: Authorize exact deployment request
-        run: |
-          echo "Authorized /deploy-azure for Issue #3 from repository owner."
+        run: echo "Authorized /deploy-azure for Issue #15 from repository owner."
 
   deploy:
-    needs: authorize
+    needs: authorize-deploy
     permissions:
       contents: read
       id-token: write
+      packages: write
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      # These UUIDs identify the approved PoC Azure target; they are configuration,
-      # not authentication secrets. Privileged credentials are never committed.
-      AZURE_CLIENT_ID: 803efb43-a00d-4113-8020-8c88996c7841
-      AZURE_TENANT_ID: 68bc9518-b4ee-443a-abbf-9a642a0a8735
-      AZURE_SUBSCRIPTION_ID: 82615ba2-5bd4-401d-b054-50df1e0e0333
-      RESOURCE_GROUP: rg-switchbot-poc-jpe-01
-      LOCATION: japaneast
+    timeout-minutes: 30
     steps:
       - name: Checkout trusted main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           persist-credentials: false
+
+      - name: Set immutable image name
+        id: image
+        shell: bash
+        run: echo "image=${IMAGE_NAME}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and publish backend image
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          set -euo pipefail
+          echo "$GHCR_TOKEN" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+          docker build --pull --tag "$IMAGE" azure/backend
+          docker push "$IMAGE"
+          docker logout ghcr.io
+
+      - name: Verify image allows anonymous pull
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          set -euo pipefail
+          if ! docker pull "$IMAGE" >/dev/null 2>&1; then
+            echo "::error::The GHCR package is not anonymously pullable. Make switchbot-home-dashboard-backend public in GitHub Packages, then run /deploy-azure again."
+            exit 1
+          fi
 
       - name: Sign in to Azure with OIDC
         uses: Azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c
@@ -49,85 +77,84 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Preserve existing SwitchBot server settings
+      - name: Ensure Container Apps CLI support
+        run: az extension add --name containerapp --upgrade --only-show-errors
+
+      - name: Preserve SwitchBot server settings
         shell: bash
         run: |
           set -euo pipefail
-          echo '[]' > /tmp/switchbot-settings.json
-          if [[ "$(az group exists --name "$RESOURCE_GROUP" --output tsv)" != "true" ]]; then
-            exit 0
+          token=''
+          secret=''
+          device_id=''
+
+          if az containerapp job show --resource-group "$RESOURCE_GROUP" --name caj-switchbot-collector-jpe-01 --output none 2>/dev/null; then
+            az containerapp job secret list --resource-group "$RESOURCE_GROUP" --name caj-switchbot-collector-jpe-01 --show-values --output json > /tmp/job-secrets.json
+            token="$(jq -r '[.[] | select(.name == "switchbot-token")][0].value // empty' /tmp/job-secrets.json)"
+            secret="$(jq -r '[.[] | select(.name == "switchbot-secret")][0].value // empty' /tmp/job-secrets.json)"
+            device_id="$(jq -r '[.[] | select(.name == "switchbot-device-id")][0].value // empty' /tmp/job-secrets.json)"
+          elif [[ "$(az group exists --name "$RESOURCE_GROUP" --output tsv)" == "true" ]]; then
+            existing_app="$(az functionapp list --resource-group "$RESOURCE_GROUP" --query '[0].name' --output tsv)"
+            if [[ -n "$existing_app" ]]; then
+              az functionapp config appsettings list --resource-group "$RESOURCE_GROUP" --name "$existing_app" --output json > /tmp/function-settings.json
+              token="$(jq -r '[.[] | select(.name == "SWITCHBOT_TOKEN")][0].value // empty' /tmp/function-settings.json)"
+              secret="$(jq -r '[.[] | select(.name == "SWITCHBOT_SECRET")][0].value // empty' /tmp/function-settings.json)"
+              device_id="$(jq -r '[.[] | select(.name == "SWITCHBOT_DEVICE_ID")][0].value // empty' /tmp/function-settings.json)"
+            fi
           fi
 
-          existing_app="$(az functionapp list --resource-group "$RESOURCE_GROUP" --query '[0].name' --output tsv)"
-          if [[ -z "$existing_app" ]]; then
-            exit 0
+          if [[ -z "$token" || -z "$secret" || -z "$device_id" ]]; then
+            echo "::error::SwitchBot server settings could not be preserved from the existing Azure workload."
+            exit 1
           fi
 
-          az functionapp config appsettings list \
-            --resource-group "$RESOURCE_GROUP" \
-            --name "$existing_app" \
-            --output json \
-            | jq '[.[] | select(.name == "SWITCHBOT_TOKEN" or .name == "SWITCHBOT_SECRET" or .name == "SWITCHBOT_DEVICE_ID")]' \
-            > /tmp/switchbot-settings.json
+          printf '%s\n' "$token" "$secret" "$device_id" | while IFS= read -r value; do
+            echo "::add-mask::$value"
+          done
 
-          while IFS= read -r value; do
-            [[ -n "$value" ]] && echo "::add-mask::$value"
-          done < <(jq -r '.[].value // empty' /tmp/switchbot-settings.json)
+          jq -n --arg token "$token" --arg secret "$secret" --arg deviceId "$device_id" '{token: $token, secret: $secret, deviceId: $deviceId}' > /tmp/switchbot-settings.json
 
-      - name: Deploy Azure infrastructure
+      - name: Deploy Container Apps infrastructure
         id: infra
         shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
         run: |
           set -euo pipefail
+          token="$(jq -r '.token' /tmp/switchbot-settings.json)"
+          secret="$(jq -r '.secret' /tmp/switchbot-settings.json)"
+          device_id="$(jq -r '.deviceId' /tmp/switchbot-settings.json)"
+
           az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output none
-          az deployment group create \
-            --resource-group "$RESOURCE_GROUP" \
-            --name "issue3-poc-${GITHUB_RUN_ID}" \
-            --template-file infra/main.bicep \
-            --parameters location="$LOCATION" \
-            --query properties.outputs \
-            --output json > /tmp/deployment-outputs.json
+          jq -n --arg image "$IMAGE" --arg token "$token" --arg secret "$secret" --arg deviceId "$device_id" --arg location "$LOCATION" '{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:$location},containerImage:{value:$image},switchBotToken:{value:$token},switchBotSecret:{value:$secret},switchBotDeviceId:{value:$deviceId}}}' > /tmp/deployment-params.json
 
-          function_app="$(jq -r '.functionAppName.value' /tmp/deployment-outputs.json)"
+          az deployment group create --resource-group "$RESOURCE_GROUP" --name "issue15-container-apps-${GITHUB_RUN_ID}" --template-file infra/main.bicep --parameters @/tmp/deployment-params.json --query properties.outputs --output json > /tmp/deployment-outputs.json
+
           api_base_url="$(jq -r '.apiBaseUrl.value' /tmp/deployment-outputs.json)"
-          [[ -n "$function_app" && "$function_app" != "null" ]]
+          job_name="$(jq -r '.collectorJobName.value' /tmp/deployment-outputs.json)"
           [[ "$api_base_url" == https://* ]]
-
-          echo "function_app=$function_app" >> "$GITHUB_OUTPUT"
+          [[ -n "$job_name" && "$job_name" != "null" ]]
           echo "api_base_url=$api_base_url" >> "$GITHUB_OUTPUT"
+          echo "job_name=$job_name" >> "$GITHUB_OUTPUT"
 
-      - name: Restore preserved SwitchBot server settings
+      - name: Smoke scheduled collector
         shell: bash
         env:
-          FUNCTION_APP: ${{ steps.infra.outputs.function_app }}
+          JOB_NAME: ${{ steps.infra.outputs.job_name }}
         run: |
           set -euo pipefail
-          if [[ "$(jq 'length' /tmp/switchbot-settings.json)" == "0" ]]; then
-            exit 0
-          fi
-
-          while IFS=$'\t' read -r name value; do
-            [[ -n "$value" ]] && echo "::add-mask::$value"
-            az functionapp config appsettings set \
-              --resource-group "$RESOURCE_GROUP" \
-              --name "$FUNCTION_APP" \
-              --settings "$name=$value" \
-              --output none
-          done < <(jq -r '.[] | [.name, .value] | @tsv' /tmp/switchbot-settings.json)
-
-      - name: Deploy Functions package
-        shell: bash
-        env:
-          FUNCTION_APP: ${{ steps.infra.outputs.function_app }}
-        run: |
-          set -euo pipefail
-          (cd azure/functions && zip -q -r /tmp/functions.zip .)
-          az functionapp deployment source config-zip \
-            --resource-group "$RESOURCE_GROUP" \
-            --name "$FUNCTION_APP" \
-            --src /tmp/functions.zip \
-            --build-remote true \
-            --output none
+          execution_name="$(az containerapp job start --resource-group "$RESOURCE_GROUP" --name "$JOB_NAME" --query name --output tsv)"
+          [[ -n "$execution_name" ]]
+          for attempt in $(seq 1 30); do
+            status="$(az containerapp job execution show --resource-group "$RESOURCE_GROUP" --name "$JOB_NAME" --job-execution-name "$execution_name" --query properties.status --output tsv 2>/dev/null || true)"
+            case "$status" in
+              Succeeded) echo "Container Apps collector execution succeeded."; exit 0 ;;
+              Failed) echo "::error::Container Apps collector execution failed."; exit 1 ;;
+            esac
+            sleep 5
+          done
+          echo "::error::Container Apps collector execution did not finish in time."
+          exit 1
 
       - name: Smoke latest endpoint
         shell: bash
@@ -139,14 +166,11 @@ jobs:
             http_status="$(curl --silent --show-error --output /tmp/latest.json --write-out '%{http_code}' "$API_BASE_URL/api/latest" || true)"
             api_status="$(jq -r '.status // empty' /tmp/latest.json 2>/dev/null || true)"
             case "$http_status:$api_status" in
-              200:ok|404:no_data|503:not_configured)
-                echo "Azure Functions latest read path is ready ($http_status/$api_status)."
-                exit 0
-                ;;
+              200:ok|404:no_data|503:not_configured) echo "Container Apps latest read path is ready ($http_status/$api_status)."; exit 0 ;;
             esac
             sleep 10
           done
-          echo "::error::Azure Functions latest endpoint did not become ready."
+          echo "::error::Container Apps latest endpoint did not become ready."
           exit 1
 
       - name: Smoke Home Story endpoint
@@ -161,29 +185,87 @@ jobs:
             api_status="$(jq -r '.status // empty' /tmp/story.json 2>/dev/null || true)"
             case "$http_status:$api_status" in
               200:ok|404:no_data|503:not_configured)
-                story_state="$http_status/$api_status"
-                echo "story_state=$story_state" >> "$GITHUB_OUTPUT"
-                echo "Azure Functions Home Story read path is ready ($story_state)."
+                echo "story_state=$http_status/$api_status" >> "$GITHUB_OUTPUT"
+                echo "Container Apps Home Story read path is ready ($http_status/$api_status)."
                 exit 0
                 ;;
             esac
             sleep 10
           done
-          echo "::error::Azure Functions Home Story endpoint did not become ready."
+          echo "::error::Container Apps Home Story endpoint did not become ready."
           exit 1
+
+      - name: Disable legacy Functions timer after collector cutover
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing_app="$(az functionapp list --resource-group "$RESOURCE_GROUP" --query '[0].name' --output tsv)"
+          if [[ -n "$existing_app" ]]; then
+            az functionapp config appsettings set --resource-group "$RESOURCE_GROUP" --name "$existing_app" --settings 'AzureWebJobs.collectSensor.Disabled=true' --output none
+            echo "Legacy Functions timer disabled; HTTP read APIs remain available until Vercel cutover."
+          fi
 
       - name: Record deployment evidence
         shell: bash
         env:
-          FUNCTION_APP: ${{ steps.infra.outputs.function_app }}
           API_BASE_URL: ${{ steps.infra.outputs.api_base_url }}
+          JOB_NAME: ${{ steps.infra.outputs.job_name }}
           STORY_STATE: ${{ steps.story-smoke.outputs.story_state }}
         run: |
           {
-            echo '### SwitchBot Azure PoC deployment'
+            echo '### SwitchBot Container Apps deployment'
             echo "- Resource group: \`$RESOURCE_GROUP\`"
-            echo "- Function App: \`$FUNCTION_APP\`"
+            echo "- Collector job: \`$JOB_NAME\`"
             echo "- API: $API_BASE_URL"
             echo "- Home Story smoke: \`$STORY_STATE\`"
-            echo '- SwitchBot credentials remain server-side and are not managed by this workflow.'
+            echo '- Legacy Functions timer is disabled after successful collector smoke.'
+            echo '- SwitchBot credentials remain Azure-side and are preserved across redeployments.'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  cleanup-legacy-functions:
+    if: >-
+      ${{ github.event.issue.number == 15 &&
+          !github.event.issue.pull_request &&
+          github.event.comment.body == '/cleanup-legacy-functions' &&
+          github.event.comment.author_association == 'OWNER' }}
+    permissions:
+      id-token: write
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Sign in to Azure with OIDC
+        uses: Azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify Container Apps replacement exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          az containerapp show --resource-group "$RESOURCE_GROUP" --name ca-switchbot-api-jpe-01 --output none
+          az containerapp job show --resource-group "$RESOURCE_GROUP" --name caj-switchbot-collector-jpe-01 --output none
+
+      - name: Remove legacy Functions resources only
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r app; do
+            [[ -z "$app" ]] && continue
+            az functionapp delete --resource-group "$RESOURCE_GROUP" --name "$app"
+          done < <(az functionapp list --resource-group "$RESOURCE_GROUP" --query '[].name' --output tsv)
+
+          if az appservice plan show --resource-group "$RESOURCE_GROUP" --name plan-switchbot-poc-jpe-01 --output none 2>/dev/null; then
+            az appservice plan delete --resource-group "$RESOURCE_GROUP" --name plan-switchbot-poc-jpe-01 --yes
+          fi
+
+          storage_account="$(az storage account list --resource-group "$RESOURCE_GROUP" --query '[0].name' --output tsv)"
+          if [[ -n "$storage_account" ]]; then
+            storage_key="$(az storage account keys list --resource-group "$RESOURCE_GROUP" --account-name "$storage_account" --query '[0].value' --output tsv)"
+            echo "::add-mask::$storage_key"
+            az storage container delete --name deployments --account-name "$storage_account" --account-key "$storage_key" --output none || true
+          fi
+
+          echo 'Legacy Function App, Flex plan, and deployment blob container removed. Table Storage was preserved.' >> "$GITHUB_STEP_SUMMARY"

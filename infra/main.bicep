@@ -1,10 +1,18 @@
 targetScope = 'resourceGroup'
 
 param location string = resourceGroup().location
-param functionPlanName string = 'plan-switchbot-poc-jpe-01'
-param functionAppName string = 'func-switchbot-${take(uniqueString(subscription().id, resourceGroup().id), 8)}'
+param containerImage string
+@secure()
+param switchBotToken string
+@secure()
+param switchBotSecret string
+@secure()
+param switchBotDeviceId string
+
+param environmentName string = 'cae-switchbot-poc-jpe-01'
+param apiAppName string = 'ca-switchbot-api-jpe-01'
+param collectorJobName string = 'caj-switchbot-collector-jpe-01'
 param storageAccountName string = 'stsbhd${take(uniqueString(subscription().id, resourceGroup().id), 12)}'
-param deploymentContainerName string = 'deployments'
 param currentTableName string = 'CurrentState'
 param historyTableName string = 'SensorReadings'
 param tableSasExpiry string = dateTimeAdd(utcNow(), 'P365D')
@@ -25,19 +33,6 @@ resource storage 'Microsoft.Storage/storageAccounts@2025-06-01' = {
   }
 }
 
-resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2025-06-01' = {
-  parent: storage
-  name: 'default'
-}
-
-resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2025-06-01' = {
-  parent: blobService
-  name: deploymentContainerName
-  properties: {
-    publicAccess: 'None'
-  }
-}
-
 resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2025-06-01' = {
   parent: storage
   name: 'default'
@@ -53,103 +48,222 @@ resource historyTable 'Microsoft.Storage/storageAccounts/tableServices/tables@20
   name: historyTableName
 }
 
-var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
-
-var currentTableSas = storage.listServiceSas('2025-06-01', {
+var currentTableReadSas = storage.listServiceSas('2025-06-01', {
   canonicalizedResource: '/table/${storage.name}/${toLower(currentTableName)}'
-  signedPermission: 'rau'
+  signedPermission: 'r'
   signedExpiry: tableSasExpiry
   signedProtocol: 'https'
 }).serviceSasToken
 
-var historyTableSas = storage.listServiceSas('2025-06-01', {
+var historyTableReadSas = storage.listServiceSas('2025-06-01', {
   canonicalizedResource: '/table/${storage.name}/${toLower(historyTableName)}'
-  signedPermission: 'rau'
+  signedPermission: 'r'
   signedExpiry: tableSasExpiry
   signedProtocol: 'https'
 }).serviceSasToken
 
-resource functionPlan 'Microsoft.Web/serverfarms@2024-04-01' = {
-  name: functionPlanName
+var currentTableWriteSas = storage.listServiceSas('2025-06-01', {
+  canonicalizedResource: '/table/${storage.name}/${toLower(currentTableName)}'
+  signedPermission: 'au'
+  signedExpiry: tableSasExpiry
+  signedProtocol: 'https'
+}).serviceSasToken
+
+var historyTableWriteSas = storage.listServiceSas('2025-06-01', {
+  canonicalizedResource: '/table/${storage.name}/${toLower(historyTableName)}'
+  signedPermission: 'au'
+  signedExpiry: tableSasExpiry
+  signedProtocol: 'https'
+}).serviceSasToken
+
+resource environment 'Microsoft.App/managedEnvironments@2025-01-01' = {
+  name: environmentName
   location: location
-  kind: 'functionapp'
-  sku: {
-    name: 'FC1'
-    tier: 'FlexConsumption'
-  }
   properties: {
-    reserved: true
+    appLogsConfiguration: {
+      destination: 'none'
+    }
+    zoneRedundant: false
   }
 }
 
-resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
-  name: functionAppName
+resource apiApp 'Microsoft.App/containerApps@2025-01-01' = {
+  name: apiAppName
   location: location
-  kind: 'functionapp,linux'
   properties: {
-    serverFarmId: functionPlan.id
-    httpsOnly: true
-    functionAppConfig: {
-      deployment: {
-        storage: {
-          type: 'blobContainer'
-          value: '${storage.properties.primaryEndpoints.blob}${deploymentContainerName}'
-          authentication: {
-            type: 'StorageAccountConnectionString'
-            storageAccountConnectionStringName: 'AzureWebJobsStorage'
-          }
-        }
+    managedEnvironmentId: environment.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: true
+        allowInsecure: false
+        targetPort: 3000
+        transport: 'auto'
       }
-      scaleAndConcurrency: {
-        maximumInstanceCount: 40
-        instanceMemoryMB: 2048
-      }
-      runtime: {
-        name: 'node'
-        version: '24'
-      }
-    }
-    siteConfig: {
-      minTlsVersion: '1.2'
-      appSettings: [
+      secrets: [
         {
-          name: 'AzureWebJobsStorage'
-          value: storageConnectionString
+          name: 'current-table-sas'
+          value: currentTableReadSas
         }
         {
-          name: 'STORAGE_ACCOUNT_NAME'
-          value: storage.name
-        }
-        {
-          name: 'CURRENT_TABLE_NAME'
-          value: currentTableName
-        }
-        {
-          name: 'CURRENT_TABLE_SAS'
-          value: currentTableSas
-        }
-        {
-          name: 'HISTORY_TABLE_NAME'
-          value: historyTableName
-        }
-        {
-          name: 'HISTORY_TABLE_SAS'
-          value: historyTableSas
-        }
-        {
-          name: 'STALE_AFTER_SECONDS'
-          value: '900'
+          name: 'history-table-sas'
+          value: historyTableReadSas
         }
       ]
     }
+    template: {
+      containers: [
+        {
+          name: 'api'
+          image: containerImage
+          env: [
+            {
+              name: 'PORT'
+              value: '3000'
+            }
+            {
+              name: 'STORAGE_ACCOUNT_NAME'
+              value: storage.name
+            }
+            {
+              name: 'CURRENT_TABLE_NAME'
+              value: currentTableName
+            }
+            {
+              name: 'CURRENT_TABLE_SAS'
+              secretRef: 'current-table-sas'
+            }
+            {
+              name: 'HISTORY_TABLE_NAME'
+              value: historyTableName
+            }
+            {
+              name: 'HISTORY_TABLE_SAS'
+              secretRef: 'history-table-sas'
+            }
+            {
+              name: 'SWITCHBOT_DEVICE_ID'
+              value: switchBotDeviceId
+            }
+            {
+              name: 'STALE_AFTER_SECONDS'
+              value: '900'
+            }
+          ]
+          resources: {
+            cpu: any('0.25')
+            memory: '0.5Gi'
+          }
+        }
+      ]
+      scale: {
+        minReplicas: 0
+        maxReplicas: 1
+      }
+    }
   }
   dependsOn: [
-    deploymentContainer
     currentTable
     historyTable
   ]
 }
 
-output functionAppName string = functionApp.name
-output apiBaseUrl string = 'https://${functionApp.properties.defaultHostName}'
+resource collectorJob 'Microsoft.App/jobs@2025-01-01' = {
+  name: collectorJobName
+  location: location
+  properties: {
+    environmentId: environment.id
+    configuration: {
+      triggerType: 'Schedule'
+      replicaTimeout: 120
+      replicaRetryLimit: 1
+      scheduleTriggerConfig: {
+        cronExpression: '*/5 * * * *'
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      secrets: [
+        {
+          name: 'switchbot-token'
+          value: switchBotToken
+        }
+        {
+          name: 'switchbot-secret'
+          value: switchBotSecret
+        }
+        {
+          name: 'switchbot-device-id'
+          value: switchBotDeviceId
+        }
+        {
+          name: 'current-table-sas'
+          value: currentTableWriteSas
+        }
+        {
+          name: 'history-table-sas'
+          value: historyTableWriteSas
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'collector'
+          image: containerImage
+          command: [
+            'node'
+            'collect.js'
+          ]
+          env: [
+            {
+              name: 'SWITCHBOT_TOKEN'
+              secretRef: 'switchbot-token'
+            }
+            {
+              name: 'SWITCHBOT_SECRET'
+              secretRef: 'switchbot-secret'
+            }
+            {
+              name: 'SWITCHBOT_DEVICE_ID'
+              secretRef: 'switchbot-device-id'
+            }
+            {
+              name: 'STORAGE_ACCOUNT_NAME'
+              value: storage.name
+            }
+            {
+              name: 'CURRENT_TABLE_NAME'
+              value: currentTableName
+            }
+            {
+              name: 'CURRENT_TABLE_SAS'
+              secretRef: 'current-table-sas'
+            }
+            {
+              name: 'HISTORY_TABLE_NAME'
+              value: historyTableName
+            }
+            {
+              name: 'HISTORY_TABLE_SAS'
+              secretRef: 'history-table-sas'
+            }
+          ]
+          resources: {
+            cpu: any('0.25')
+            memory: '0.5Gi'
+          }
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    currentTable
+    historyTable
+  ]
+}
+
+output apiAppName string = apiApp.name
+output apiBaseUrl string = 'https://${apiApp.properties.configuration.ingress.fqdn}'
+output collectorJobName string = collectorJob.name
+output environmentName string = environment.name
 output storageAccountName string = storage.name

@@ -7,7 +7,7 @@
     "dev": "next dev",
     "check": "biome lint .",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/foundation-bootstrap.test.mjs azure/functions/tests/switchbot.test.js azure/functions/tests/storage.test.js azure/functions/tests/history.test.js azure/functions/tests/http.test.js azure/functions/tests/collector.test.js azure/functions/tests/story.test.js",
+    "test": "node --test tests/foundation-bootstrap.test.mjs azure/backend/tests/switchbot.test.js azure/backend/tests/storage.test.js azure/backend/tests/history.test.js azure/backend/tests/http.test.js azure/backend/tests/collector.test.js azure/backend/tests/story.test.js azure/backend/tests/runtime.test.js",
     "build": "next build",
     "start": "next start"
   },
