@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "env": {
-    "AZURE_FUNCTIONS_BASE_URL": "https://func-switchbot-bnmrxfo7.azurewebsites.net"
+    "AZURE_BACKEND_BASE_URL": "https://ca-switchbot-api-jpe-01.proudwater-95fdbc7b.japaneast.azurecontainerapps.io"
   },
   "git": {
     "deploymentEnabled": {
