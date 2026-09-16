@@ -6,8 +6,6 @@ The architecture PoC is proven: SwitchBot environmental readings can be collecte
 
 The current product layer adds **Home Story** on top of that path. Home Story deterministically reduces the current JST calendar day's stored observations into a small factual narrative for the mobile UI.
 
-Issue #15 changes the Azure runtime from Functions to Container Apps to remove Functions host/deployment storage overhead while preserving the data and API contracts.
-
 ## Approved target topology
 
 ```text
@@ -43,15 +41,13 @@ Collection and read responsibilities remain intentionally separated. A slow or u
 - The API runs as an Azure Container App with external HTTPS ingress, `minReplicas: 0`, and `maxReplicas: 1`.
 - The collector runs as an Azure Container Apps scheduled Job every five minutes with one replica and one completion.
 - Both workloads use 0.25 vCPU and 0.5 GiB memory for the PoC.
-- The Container Apps Environment has no VNet integration and sends platform logs to `none`; Log Analytics is deliberately excluded.
+- The Container Apps Environment has no VNet integration and no Log Analytics workspace/destination.
 - The image is published from the trusted deployment workflow to GHCR with an immutable commit-SHA tag. ACR is deliberately excluded to avoid a registry fixed cost.
 - The workload keeps one Standard_LRS Storage Account in Japan East for application-owned Table Storage.
-- `infra/main.bicep` owns the target Azure workload resources.
+- `infra/main.bicep` owns the Azure workload resources.
 - Application Insights, Key Vault, VNet integration, private endpoints, queues/event buses, and additional data stores remain deliberately excluded.
 - Azure deployment is privileged and runs only from trusted `main` through the owner-triggered deployment path.
 - GitHub -> Azure authentication uses OIDC. No Azure client secret is introduced.
-
-During Issue #15 cutover, the old Function App is retained temporarily as rollback for the HTTP read path. After the new collector smoke succeeds, its timer is disabled to avoid duplicate polling. The Function App and old deployment blob container are removed only after the Vercel backend target is switched and verified.
 
 ## Responsibilities
 
@@ -59,7 +55,6 @@ During Issue #15 cutover, the old Function App is retained temporarily as rollba
 
 - Render Home Story as a dynamic Server Component.
 - Read story data only from the application backend through the server-side `AZURE_BACKEND_BASE_URL` setting.
-- During the one-time Issue #15 transition, `AZURE_FUNCTIONS_BASE_URL` is accepted only as a compatibility fallback until Vercel is cut over.
 - Hold no SwitchBot credentials or Azure Storage credentials.
 - Do not perform background collection or story inference in the browser.
 - Do not make browser-side requests to SwitchBot or Azure Table Storage.

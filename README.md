@@ -8,9 +8,9 @@ The architecture PoC is complete. The current product turns persisted observatio
 
 ```text
 SwitchBot Open API
-  -> Azure Functions collector (every 5 minutes)
+  -> Azure Container Apps scheduled collector (every 5 minutes)
   -> Azure Table Storage
-  -> Azure Functions story API
+  -> Azure Container App read API (scale to zero)
   -> Next.js / Vercel Home Story
 ```
 
@@ -26,7 +26,7 @@ The story engine is deterministic and server-side. It detects a small number of 
 
 It does **not** use an LLM and does not invent causes such as ventilation, presence, sleep, or returning home. A stable day is intentionally rendered as a calm-day summary with observed ranges. No-data, stale, and backend-error states remain separate.
 
-For the selected `MeterPro(CO2)`, new observations persist:
+For the selected `MeterPro(CO2)`, observations persist:
 
 - CO₂;
 - temperature;
@@ -49,7 +49,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-`AZURE_FUNCTIONS_BASE_URL` is a server-side Next.js setting. Do not use a `NEXT_PUBLIC_` variable for backend or SwitchBot credentials.
+`AZURE_BACKEND_BASE_URL` is a server-side Next.js setting. Do not use a `NEXT_PUBLIC_` variable for backend or SwitchBot credentials.
 
 Quality gate:
 
@@ -60,7 +60,7 @@ npm run test
 npm run build
 ```
 
-Azure IaC is validated separately by `.github/workflows/infra-ci.yml`.
+Azure backend tests and IaC are validated separately by `.github/workflows/backend-ci.yml` and `.github/workflows/infra-ci.yml`.
 
 ## Azure deployment
 
@@ -68,22 +68,23 @@ Azure resources are defined in `infra/main.bicep` and currently include:
 
 - one Standard_LRS Storage Account;
 - `CurrentState` and `SensorReadings` tables;
-- one private deployment blob container;
-- one Azure Functions Flex Consumption plan and Function App.
+- one Azure Container Apps Environment without Log Analytics;
+- one scale-to-zero Container App for the read API;
+- one scheduled Container Apps Job that collects every five minutes.
 
-The privileged deployment workflow is intentionally not runnable from PR code. The trusted `main` workflow signs in to Azure with GitHub OIDC, deploys the Bicep template, deploys the Functions package, and smoke-tests both `/api/latest` and `/api/story`. The Home Story smoke records the explicit HTTP/API state without logging sensor values or credentials.
+The API and collector use the same immutable Node.js 24 image from GHCR. The trusted `main` deployment workflow signs in to Azure with GitHub OIDC, publishes the image, deploys Bicep, manually exercises the collector, and smoke-tests `/api/latest` and `/api/story`. PR code cannot request the privileged Azure deployment path.
 
-The fixed Azure client ID, tenant ID, and subscription ID are intentionally committed as public deployment identifiers in the trusted workflow. They identify the personal Azure target and are not authentication secrets. No Azure client secret is used or committed.
+The fixed Azure client ID, tenant ID, and subscription ID are committed target identifiers, not authentication secrets. No Azure client secret is used or committed.
 
-SwitchBot credentials are deliberately not managed by Bicep or GitHub Actions. Configure these Function App settings directly in Azure:
+SwitchBot credentials remain Azure-side in Container Apps Job secrets:
 
 - `SWITCHBOT_TOKEN`
 - `SWITCHBOT_SECRET`
 - `SWITCHBOT_DEVICE_ID`
 
-Do not commit or paste those values into repository files. The deployment workflow preserves the existing server-side settings across later Bicep redeployments.
+The deployment workflow preserves those values from the existing Job and never prints them or stores them in repository files. The HTTP API and Vercel never receive SwitchBot Token/Secret or Azure Table credentials.
 
-For the fixed single-environment application, `vercel.json` pins the server-side `AZURE_FUNCTIONS_BASE_URL` to the deployed Function App. The Function App base URL is a public read-endpoint identifier, not a credential; SwitchBot credentials and Azure Storage credentials remain Azure-side only. Local development can continue to set `AZURE_FUNCTIONS_BASE_URL` through `.env.local`.
+For the fixed single-environment application, `vercel.json` pins the server-side `AZURE_BACKEND_BASE_URL` to the deployed Container App. The public backend URL is an identifier, not a credential. Local development can set the same variable through `.env.local`.
 
 ## Read APIs
 

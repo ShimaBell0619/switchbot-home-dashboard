@@ -13,6 +13,7 @@ env:
   RESOURCE_GROUP: rg-switchbot-poc-jpe-01
   LOCATION: japaneast
   IMAGE_NAME: ghcr.io/shimabell0619/switchbot-home-dashboard-backend
+  COLLECTOR_JOB_NAME: caj-switchbot-collector-jpe-01
 
 jobs:
   authorize-deploy:
@@ -85,27 +86,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          token=''
-          secret=''
-          device_id=''
 
-          if az containerapp job show --resource-group "$RESOURCE_GROUP" --name caj-switchbot-collector-jpe-01 --output none 2>/dev/null; then
-            az containerapp job secret list --resource-group "$RESOURCE_GROUP" --name caj-switchbot-collector-jpe-01 --show-values --output json > /tmp/job-secrets.json
-            token="$(jq -r '[.[] | select(.name == "switchbot-token")][0].value // empty' /tmp/job-secrets.json)"
-            secret="$(jq -r '[.[] | select(.name == "switchbot-secret")][0].value // empty' /tmp/job-secrets.json)"
-            device_id="$(jq -r '[.[] | select(.name == "switchbot-device-id")][0].value // empty' /tmp/job-secrets.json)"
-          elif [[ "$(az group exists --name "$RESOURCE_GROUP" --output tsv)" == "true" ]]; then
-            existing_app="$(az functionapp list --resource-group "$RESOURCE_GROUP" --query '[0].name' --output tsv)"
-            if [[ -n "$existing_app" ]]; then
-              az functionapp config appsettings list --resource-group "$RESOURCE_GROUP" --name "$existing_app" --output json > /tmp/function-settings.json
-              token="$(jq -r '[.[] | select(.name == "SWITCHBOT_TOKEN")][0].value // empty' /tmp/function-settings.json)"
-              secret="$(jq -r '[.[] | select(.name == "SWITCHBOT_SECRET")][0].value // empty' /tmp/function-settings.json)"
-              device_id="$(jq -r '[.[] | select(.name == "SWITCHBOT_DEVICE_ID")][0].value // empty' /tmp/function-settings.json)"
-            fi
+          if ! az containerapp job show --resource-group "$RESOURCE_GROUP" --name "$COLLECTOR_JOB_NAME" --output none 2>/dev/null; then
+            echo "::error::Existing collector job not found. SwitchBot secrets must be bootstrapped in Azure before a from-scratch deployment."
+            exit 1
           fi
 
+          az containerapp job secret list \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$COLLECTOR_JOB_NAME" \
+            --show-values \
+            --output json > /tmp/job-secrets.json
+
+          token="$(jq -r '[.[] | select(.name == "switchbot-token")][0].value // empty' /tmp/job-secrets.json)"
+          secret="$(jq -r '[.[] | select(.name == "switchbot-secret")][0].value // empty' /tmp/job-secrets.json)"
+          device_id="$(jq -r '[.[] | select(.name == "switchbot-device-id")][0].value // empty' /tmp/job-secrets.json)"
+
           if [[ -z "$token" || -z "$secret" || -z "$device_id" ]]; then
-            echo "::error::SwitchBot server settings could not be preserved from the existing Azure workload."
+            echo "::error::SwitchBot server settings could not be preserved from the existing Container Apps Job."
             exit 1
           fi
 
@@ -113,7 +111,12 @@ jobs:
             echo "::add-mask::$value"
           done
 
-          jq -n --arg token "$token" --arg secret "$secret" --arg deviceId "$device_id" '{token: $token, secret: $secret, deviceId: $deviceId}' > /tmp/switchbot-settings.json
+          jq -n \
+            --arg token "$token" \
+            --arg secret "$secret" \
+            --arg deviceId "$device_id" \
+            '{token: $token, secret: $secret, deviceId: $deviceId}' \
+            > /tmp/switchbot-settings.json
 
       - name: Deploy Container Apps infrastructure
         id: infra
@@ -127,9 +130,22 @@ jobs:
           device_id="$(jq -r '.deviceId' /tmp/switchbot-settings.json)"
 
           az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output none
-          jq -n --arg image "$IMAGE" --arg token "$token" --arg secret "$secret" --arg deviceId "$device_id" --arg location "$LOCATION" '{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:$location},containerImage:{value:$image},switchBotToken:{value:$token},switchBotSecret:{value:$secret},switchBotDeviceId:{value:$deviceId}}}' > /tmp/deployment-params.json
+          jq -n \
+            --arg image "$IMAGE" \
+            --arg token "$token" \
+            --arg secret "$secret" \
+            --arg deviceId "$device_id" \
+            --arg location "$LOCATION" \
+            '{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:$location},containerImage:{value:$image},switchBotToken:{value:$token},switchBotSecret:{value:$secret},switchBotDeviceId:{value:$deviceId}}}' \
+            > /tmp/deployment-params.json
 
-          az deployment group create --resource-group "$RESOURCE_GROUP" --name "issue15-container-apps-${GITHUB_RUN_ID}" --template-file infra/main.bicep --parameters @/tmp/deployment-params.json --query properties.outputs --output json > /tmp/deployment-outputs.json
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "container-apps-${GITHUB_RUN_ID}" \
+            --template-file infra/main.bicep \
+            --parameters @/tmp/deployment-params.json \
+            --query properties.outputs \
+            --output json > /tmp/deployment-outputs.json
 
           api_base_url="$(jq -r '.apiBaseUrl.value' /tmp/deployment-outputs.json)"
           job_name="$(jq -r '.collectorJobName.value' /tmp/deployment-outputs.json)"
@@ -151,8 +167,14 @@ jobs:
           for attempt in $(seq 1 30); do
             status="$(az containerapp job execution show --resource-group "$RESOURCE_GROUP" --name "$JOB_NAME" --job-execution-name "$execution_name" --query properties.status --output tsv 2>/dev/null || true)"
             case "$status" in
-              Succeeded) echo "Container Apps collector execution succeeded."; exit 0 ;;
-              Failed) echo "::error::Container Apps collector execution failed."; exit 1 ;;
+              Succeeded)
+                echo "Container Apps collector execution succeeded."
+                exit 0
+                ;;
+              Failed)
+                echo "::error::Container Apps collector execution failed."
+                exit 1
+                ;;
             esac
             sleep 5
           done
@@ -169,7 +191,10 @@ jobs:
             http_status="$(curl --silent --show-error --output /tmp/latest.json --write-out '%{http_code}' "$API_BASE_URL/api/latest" || true)"
             api_status="$(jq -r '.status // empty' /tmp/latest.json 2>/dev/null || true)"
             case "$http_status:$api_status" in
-              200:ok|404:no_data|503:not_configured) echo "Container Apps latest read path is ready ($http_status/$api_status)."; exit 0 ;;
+              200:ok|404:no_data|503:not_configured)
+                echo "Container Apps latest read path is ready ($http_status/$api_status)."
+                exit 0
+                ;;
             esac
             sleep 10
           done
@@ -198,16 +223,6 @@ jobs:
           echo "::error::Container Apps Home Story endpoint did not become ready."
           exit 1
 
-      - name: Disable legacy Functions timer after collector cutover
-        shell: bash
-        run: |
-          set -euo pipefail
-          existing_app="$(az functionapp list --resource-group "$RESOURCE_GROUP" --query '[0].name' --output tsv)"
-          if [[ -n "$existing_app" ]]; then
-            az functionapp config appsettings set --resource-group "$RESOURCE_GROUP" --name "$existing_app" --settings 'AzureWebJobs.collectSensor.Disabled=true' --output none
-            echo "Legacy Functions timer disabled; HTTP read APIs remain available until Vercel cutover."
-          fi
-
       - name: Record deployment evidence
         shell: bash
         env:
@@ -221,57 +236,5 @@ jobs:
             echo "- Collector job: \`$JOB_NAME\`"
             echo "- API: $API_BASE_URL"
             echo "- Home Story smoke: \`$STORY_STATE\`"
-            echo '- Legacy Functions timer is disabled after successful collector smoke.'
             echo '- SwitchBot credentials remain Azure-side and are preserved across redeployments.'
           } >> "$GITHUB_STEP_SUMMARY"
-
-  cleanup-legacy-functions:
-    if: >-
-      ${{ github.event.issue.number == 15 &&
-          !github.event.issue.pull_request &&
-          github.event.comment.body == '/cleanup-legacy-functions' &&
-          github.event.comment.author_association == 'OWNER' }}
-    permissions:
-      id-token: write
-      contents: read
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Sign in to Azure with OIDC
-        uses: Azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c
-        with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Ensure Container Apps CLI support
-        run: az extension add --name containerapp --upgrade --only-show-errors
-
-      - name: Verify Container Apps replacement exists
-        shell: bash
-        run: |
-          set -euo pipefail
-          az containerapp show --resource-group "$RESOURCE_GROUP" --name ca-switchbot-api-jpe-01 --output none
-          az containerapp job show --resource-group "$RESOURCE_GROUP" --name caj-switchbot-collector-jpe-01 --output none
-
-      - name: Remove legacy Functions resources only
-        shell: bash
-        run: |
-          set -euo pipefail
-          while IFS= read -r app; do
-            [[ -z "$app" ]] && continue
-            az functionapp delete --resource-group "$RESOURCE_GROUP" --name "$app"
-          done < <(az functionapp list --resource-group "$RESOURCE_GROUP" --query '[].name' --output tsv)
-
-          if az appservice plan show --resource-group "$RESOURCE_GROUP" --name plan-switchbot-poc-jpe-01 --output none 2>/dev/null; then
-            az appservice plan delete --resource-group "$RESOURCE_GROUP" --name plan-switchbot-poc-jpe-01 --yes
-          fi
-
-          storage_account="$(az storage account list --resource-group "$RESOURCE_GROUP" --query '[0].name' --output tsv)"
-          if [[ -n "$storage_account" ]]; then
-            storage_key="$(az storage account keys list --resource-group "$RESOURCE_GROUP" --account-name "$storage_account" --query '[0].value' --output tsv)"
-            echo "::add-mask::$storage_key"
-            az storage container delete --name deployments --account-name "$storage_account" --account-key "$storage_key" --output none || true
-          fi
-
-          echo 'Legacy Function App, Flex plan, and deployment blob container removed. Table Storage was preserved.' >> "$GITHUB_STEP_SUMMARY"
