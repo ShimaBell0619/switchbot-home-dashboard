@@ -1,3 +1,5 @@
+import { readDirectDashboardState } from "@/lib/direct-table";
+
 export type StoryMetricRange = {
   min: number;
   max: number;
@@ -37,6 +39,7 @@ export type DashboardState =
     };
 
 type ApiBody = Record<string, unknown>;
+type Dependencies = { fetchImpl?: typeof fetch; now?: () => number };
 
 function apiBaseUrl(env = process.env) {
   return String(env.AZURE_BACKEND_BASE_URL ?? "")
@@ -130,12 +133,23 @@ function parseFreshness(value: unknown) {
   return freshness as { ageSeconds: number | null; stale: boolean };
 }
 
-export async function getDashboardState(env = process.env): Promise<DashboardState> {
-  const baseUrl = apiBaseUrl(env);
-  if (!baseUrl) return { kind: "web_not_configured" };
+export async function getDashboardState(
+  env = process.env,
+  dependencies: Dependencies = {},
+): Promise<DashboardState> {
+  const fetchImpl = dependencies.fetchImpl ?? fetch;
+  const now = dependencies.now ?? Date.now;
 
   try {
-    const response = await fetch(`${baseUrl}/api/story`, { cache: "no-store" });
+    const directState = (await readDirectDashboardState({ env, fetchImpl, now })) as
+      | DashboardState
+      | null;
+    if (directState) return directState;
+
+    const baseUrl = apiBaseUrl(env);
+    if (!baseUrl) return { kind: "web_not_configured" };
+
+    const response = await fetchImpl(`${baseUrl}/api/story`, { cache: "no-store" });
     const body = await readBody(response);
 
     if (response.status === 503 && body.status === "not_configured") {
