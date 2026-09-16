@@ -34,7 +34,7 @@ Matching routes are additive. Do not create empty documents merely to fill a rou
 - Use the Foundation v0.10.0 context-routed Chat implementation method for material work: session-local Repository Context Packet, Design Intent, Implementation Map, coherent implementation batch, focused/full validation, self-review, correction, re-review, and final validation.
 - Issue-driven development is the default. Use a short-lived branch from the observed base SHA and Conventional Commit-style PR titles.
 - Prefer the smallest coherent implementation. Do not add generic IoT abstractions, event buses, repositories, state-management libraries, or provider adapters before the PoC needs them.
-- The SwitchBot -> Azure Functions -> Azure Table Storage -> backend API -> web path is already approved for the PoC. A different persistence provider, new external integration, device-control capability, authentication/authorization model, new sensitive data class, destructive migration, retention policy, or recurring-cost architecture change requires explicit approval.
+- The approved backend path is SwitchBot -> Azure Container Apps scheduled collector -> Azure Table Storage -> scale-to-zero Container App read API -> Next.js/Vercel. A different persistence provider, new external integration, device-control capability, authentication/authorization model, new sensitive data class, destructive migration, retention policy, or recurring-cost architecture change requires explicit approval.
 - Never expose SwitchBot Token/Secret or Azure privileged credentials to browser code. Do not commit secrets.
 
 ## UI rules
