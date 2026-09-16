@@ -135,6 +135,8 @@ jobs:
           job_name="$(jq -r '.collectorJobName.value' /tmp/deployment-outputs.json)"
           [[ "$api_base_url" == https://* ]]
           [[ -n "$job_name" && "$job_name" != "null" ]]
+          echo "Container Apps API base URL: $api_base_url"
+          echo "Container Apps collector job: $job_name"
           echo "api_base_url=$api_base_url" >> "$GITHUB_OUTPUT"
           echo "job_name=$job_name" >> "$GITHUB_OUTPUT"
 
