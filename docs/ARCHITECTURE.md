@@ -6,7 +6,7 @@ The architecture PoC is proven: SwitchBot environmental readings can be collecte
 
 The current product layer adds **Home Story** on top of that path. Home Story deterministically reduces the current JST calendar day's stored observations into a small factual narrative for the mobile UI.
 
-Issue #21 simplifies the read path by removing the scale-to-zero Azure Container App HTTP API. The Next.js server runtime reads the persisted Table Storage history directly with a read-only table-scoped SAS. Browser code still receives neither Azure credentials nor direct Table access.
+Current Production reads Home Story through the scale-to-zero Azure Container App HTTP API. Next.js also contains an optional direct Table-read path, but Issue #21 is on hold: it is not a prerequisite for developing new features. The browser never receives Azure credentials or accesses Table Storage directly.
 
 ## Approved target topology
 
