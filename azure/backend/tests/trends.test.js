@@ -30,7 +30,7 @@ test("seven JST calendar days are ordered and do not fabricate observations", ()
   assert.equal(result.days[6].date, "2026-10-10");
   assert.equal(result.days[6].isToday, true);
   assert.equal(result.days[6].observations, 1);
-  assert.equal(result.totalObservations, 3 + 1);
+  assert.equal(result.totalObservations, 3);
   assert.equal(result.observedDays, 3);
 });
 

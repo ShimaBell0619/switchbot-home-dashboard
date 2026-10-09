@@ -3,8 +3,6 @@ version: alpha
 name: SwitchBot Home Story
 description: Mobile-first UI and UX contract for reading what changed in the home today.
 omitted:
-  - section: navigation
-    reason: Home Story v0.1 intentionally has one primary surface; trend/device/scene navigation is deferred until those experiences exist.
   - section: charts
     reason: Home Story v0.1 prioritizes narrative events and calm-day ranges over graph-heavy analysis.
 ---
@@ -98,7 +96,16 @@ Tailwind CSS remains the styling infrastructure. Semantic native elements are su
 - `main`, `header`, `section`, `ol/li`, `time`, `dl/dt/dd`, and text elements;
 - no component library is required for the current non-interactive story surface.
 
-Future `今日 / 傾向` switching should not be built until the trend content and interaction contract are approved.
+「今日／7日間」は2つの実在する画面だけを切り替える短いナビゲーションとする。
+
+## 7日間の表示
+
+- 「今日」は従来どおり主画面。「7日間」は独立した`/trends`画面へリンクし、タブ風の装飾を増やさない。
+- レイアウトは同じ狭い縦読みカラム。7日間を直近の日から順に並べ、日付・観測件数・CO₂最高値・温度範囲・湿度範囲を簡潔に示す。
+- 今日の集計は途中経過であることを示す。観測がない日は値を埋めず「データなし」、メトリクスがない場合は「記録なし」を表示する。
+- 円グラフ・折れ線グラフ・推定値・警報色は今回追加しない。状態・数値はすべて文字で理解できるようにする。
+- API未対応の間は「準備中」、取得失敗は「読み取れませんでした」と表示し、データなしや正常値と混同しない。
+- 1440px、390px、320pxの実描画とキーボード操作を確認する。
 
 ## State behavior
 
