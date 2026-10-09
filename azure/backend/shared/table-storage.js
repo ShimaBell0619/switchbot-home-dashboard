@@ -114,6 +114,61 @@ async function queryRecentEntities({
   return Array.isArray(payload?.value) ? payload.value : [];
 }
 
+
+const MAX_TREND_ROWS = 2300;
+const TABLE_PAGE_SIZE = 1000;
+
+// The inverted RowKey is monotonic in reverse observation-time order.
+// Use the bucket containing the JST cutoff, then apply an exact timestamp filter.
+async function querySevenDayEntities({
+  accountName,
+  tableName,
+  sas,
+  partitionKey,
+  sinceMs,
+  nowMs = Date.now(),
+  fetchImpl = fetch,
+}) {
+  if (!Number.isFinite(sinceMs) || !Number.isFinite(nowMs) || sinceMs > nowMs) {
+    throw new Error("Invalid trends query period");
+  }
+  const cutoffKey = historyRowKey(new Date(sinceMs).toISOString());
+  const filter = `PartitionKey eq '${escapeODataKey(partitionKey)}' and RowKey le '${cutoffKey}'`;
+  const rows = [];
+  const seen = new Set();
+  let continuation = null;
+
+  for (let page = 0; page < 20; page += 1) {
+    const query = { $filter: filter, $top: TABLE_PAGE_SIZE };
+    if (continuation?.partition) query.NextPartitionKey = continuation.partition;
+    if (continuation?.row) query.NextRowKey = continuation.row;
+    const url = buildTableUrl({ accountName, tableName, sas, query });
+    const response = await fetchImpl(url, { method: "GET", headers: tableHeaders() });
+    if (!response.ok) {
+      throw new Error(`Table trends query failed (HTTP ${response.status})`);
+    }
+    const body = await response.json();
+    if (!Array.isArray(body?.value)) throw new Error("Table trends response has no entity list");
+    rows.push(...body.value);
+    if (rows.length > MAX_TREND_ROWS) {
+      throw new Error("Table trends query exceeded the bounded observation limit");
+    }
+    const partition = response.headers?.get("x-ms-continuation-nextpartitionkey") ?? null;
+    const row = response.headers?.get("x-ms-continuation-nextrowkey") ?? null;
+    if (!partition && !row) {
+      return rows.filter((item) => {
+        const time = Date.parse(item?.observedAt);
+        return Number.isFinite(time) && time >= sinceMs && time <= nowMs;
+      });
+    }
+    const marker = JSON.stringify([partition, row]);
+    if (seen.has(marker)) throw new Error("Table trends continuation token repeated");
+    seen.add(marker);
+    continuation = { partition, row };
+  }
+  throw new Error("Table trends query exceeded the maximum page count");
+}
+
 function historyRowKey(observedAt) {
   const timestamp = new Date(observedAt).getTime();
   if (!Number.isFinite(timestamp)) throw new Error("Invalid observation timestamp");
@@ -166,6 +221,7 @@ module.exports = {
   getTableConfig,
   historyRowKey,
   queryRecentEntities,
+  querySevenDayEntities,
   saveReading,
   upsertEntity,
 };

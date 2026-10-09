@@ -2,6 +2,7 @@ const http = require("node:http");
 const history = require("./history");
 const latest = require("./latest");
 const story = require("./story");
+const trends = require("./trends");
 
 function writeResponse(res, result) {
   res.statusCode = result?.status ?? 500;
@@ -15,6 +16,7 @@ function createRequestHandler({
   historyHandler = history,
   latestHandler = latest,
   storyHandler = story,
+  trendsHandler = trends,
   logger = console,
 } = {}) {
   return async function requestHandler(req, res) {
@@ -45,6 +47,7 @@ function createRequestHandler({
       "/api/latest": latestHandler,
       "/api/history": historyHandler,
       "/api/story": storyHandler,
+      "/api/trends": trendsHandler,
     };
     const handler = routes[url.pathname];
     if (!handler) {
