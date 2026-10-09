@@ -1,69 +1,43 @@
-# SwitchBot Home Dashboard — Agent Instructions
+# SwitchBot Home Story — AI開発ルール
 
 Foundation-Version: 0.10.0
 
-## Read order
+## 役割と基本方針
 
-Before a material change:
+- **Chat + GitHub**を設計・Issue・小〜中規模の実装・PRの標準とし、**Work**は実行・画面検証・大きな変更が必要な場合に使う。
+- 作業範囲はIssueまたは合意済み依頼の受け入れ条件で決める。`PRODUCT.md`を製品仕様、`DESIGN.md`をUI・UX、`docs/ARCHITECTURE.md`を構成・データ境界の正本とする。
+- 適用元は`docs/FOUNDATION.md`に記録する。実装上の共通方針は採用済みFoundationの`AGENTS.md`と`docs/ai-implementation.md`に従う。最新の`main`が自動的に適用されるわけではない。
+- 必要な仕様だけを読み、履歴や会話全文を毎回取り込まない。意味のないContext Packet、Implementation Map、専用Skillなどを生成しない。
+- 作業開始前にベースSHAを確認し、短命ブランチで変更する。競合する書き込みやforce pushを避ける。Issue・PR・コミットSHA・CIをChatとWorkの引き継ぎに用いる。
 
-1. Read the Issue / approved request and Acceptance Criteria.
-2. Read `PRODUCT.md`.
-3. Read this `AGENTS.md`.
-4. Apply `## Context routing` and read the union of matching contracts.
-5. Read `README.md` when public/user/contributor usage is affected.
+## 仕様と承認境界
 
-`docs/FOUNDATION.md` records the adopted Foundation revision. Current product behavior belongs in `PRODUCT.md`; UI/UX decisions belong in `DESIGN.md`; substantial technical boundaries belong in `docs/ARCHITECTURE.md`.
+- 既定の経路は **SwitchBot Open API → Azure Container Appsの5分間隔Job → Azure Table Storage → Next.js/Vercelサーバー → ブラウザ**。
+- 現在、Issue #21の安全な切替が完了するまでは旧Azure HTTP APIをフォールバックとして維持する。**本番直接読み取りの検証前に旧APIを削除しない。**
+- Storage以外への永続化先変更、デバイス制御、認証認可方式、新しい機密データ、破壊的移行、データ保持・削除、追加課金のある構成変更は事前承認を要する。
+- 権限境界・公開API・本番配備方式の実質的変更も事前承認を要する。既存の動作を保つ局所的な修正やテスト追加は承認済み範囲で進めてよい。
+- SwitchBot Token/Secret、Table SAS、Azureの特権資格情報をリポジトリ・ログ・ブラウザ・応答・Preview環境へ露出しない。`NEXT_PUBLIC_*`に秘密を入れない。
 
-## Context routing
+## データの取り扱い
 
-| Change area / condition | Required context in addition to the base route |
-| --- | --- |
-| Product design / UX | `DESIGN.md` |
-| UI infrastructure | `DESIGN.md`, `docs/FOUNDATION.md` |
-| Domain / data | `docs/ARCHITECTURE.md` |
-| Integration / trust | `docs/ARCHITECTURE.md` |
-| Architecture / platform | `docs/ARCHITECTURE.md` |
-| Delivery / operations | `docs/FOUNDATION.md`, affected workflow/deployment contract |
-| Foundation adoption | `docs/FOUNDATION.md`, target Foundation guidance/change notes |
-| Local implementation / refactor | no additional contract unless another route is actually triggered |
+- ブラウザからSwitchBot APIやTable Storageを直接呼び出さない。ページ表示中の外部SwitchBot APIの状態に依存させない。
+- SwitchBot APIのHTTP成功とレスポンスの`statusCode`成功を別々に検証する。不正な値を既定値で補ったり、観測されたかのように保存したりしない。
+- upstreamの観測時刻がある場合はそれを使用し、ない場合はCollectorが観測した時刻であることを明記する。リトライ時も観測IDの冪等性を守る。
+- Home Storyは保存済み観測だけから決定論的に生成する。`換気`、`在宅`、`睡眠`など、根拠のない原因や行動を断定しない。
+- 正常な穏やかな日（calm）、今日のデータなし（no_data）、古いデータ（stale）、読み取り失敗（error）を混同しない。
+- 現状は選択したMeter Pro (CO2)の温度・湿度・CO₂・任意の電池残量を扱い、データの自動削除・保持期限は新たに導入しない。
 
-Matching routes are additive. Do not create empty documents merely to fill a route.
+## UI・UX
 
-## Implementation method
+- `DESIGN.md`を正本とする。モバイル優先の「今日のストーリー」を中心にし、汎用管理ダッシュボードやSwitchBotアプリを模倣しない。
+- Tailwind CSSと意味のあるネイティブHTMLを優先。実際の共通操作が必要になるまでUIライブラリは追加しない。
+- UI変更時は1440px・390px・320px程度で実際にレンダリングし、日本語折り返し・はみ出し・キーボード操作・状態表現を確認する。ソースを読んだだけで表示確認済みとは報告しない。
+- タブ、グラフ、デバイス制御、追加のコンポーネント層は現在の受け入れ条件で必要な場合のみ実装する。
 
-- Use the Foundation v0.10.0 context-routed Chat implementation method for material work: session-local Repository Context Packet, Design Intent, Implementation Map, coherent implementation batch, focused/full validation, self-review, correction, re-review, and final validation.
-- Issue-driven development is the default. Use a short-lived branch from the observed base SHA and Conventional Commit-style PR titles.
-- Prefer the smallest coherent implementation. Do not add generic IoT abstractions, event buses, repositories, state-management libraries, or provider adapters before the PoC needs them.
-- The approved backend path is SwitchBot -> Azure Container Apps scheduled collector -> Azure Table Storage -> Next.js/Vercel server-side read -> browser. A different persistence provider, new external integration, device-control capability, authentication/authorization model, new sensitive data class, destructive migration, retention policy, or recurring-cost architecture change requires explicit approval.
-- Never expose SwitchBot Token/Secret, Azure privileged credentials, or Table SAS values to browser code. Do not commit secrets.
+## 変更と検証
 
-## UI rules
-
-- `DESIGN.md` is authoritative for hierarchy and visual direction.
-- Use Tailwind as styling infrastructure and semantic native controls / accessible primitives for ordinary interaction.
-- Add shadcn/ui-style primitives only when an actual common interaction requires them; do not add a component library merely to satisfy the profile mechanically.
-- User-facing UI changes require render -> critique -> fix -> re-render.
-- Review approximately 1440px desktop, 390px mobile, and 320px narrow, including overflow, Japanese wrapping, keyboard/focus, and semantic status.
-- Do not imitate SwitchBot or generic SaaS dashboard composition.
-
-## Integration and data rules
-
-- Browser rendering must not depend on a direct SwitchBot Open API request.
-- Browser code must not call Azure Table Storage directly; Table access belongs to the Next.js server runtime or approved Azure backend workloads.
-- Treat SwitchBot as an external trust boundary: validate HTTP/API success separately from the API response body status and handle upstream failure without writing fabricated readings.
-- Persist the upstream observation time when available; otherwise record the collector observation time explicitly. Do not silently replace stale upstream data with a fresh timestamp.
-- Make collection idempotent for the chosen reading identity before increasing retry frequency or adding Webhooks.
-- Keep the PoC data model limited to the environmental fields needed by the selected test device.
-
-## Validation and review
-
-The default quality contract is:
-
-- `npm run check`
-- `npm run typecheck`
-- `npm run test`
-- `npm run build`
-
-Material UI work also requires rendered validation. The final implementation pass is not completion: self-review the final diff against the Issue, Product contract, Design Intent, regressions, responsive/accessibility behavior, trust boundaries, data-integrity behavior, failure paths, and unnecessary complexity, then correct and revalidate.
-
-Independent review is risk-based. Real external integration/persistence, privileged Azure/GitHub workflows, destructive/data-integrity behavior, authentication/authorization, release/deployment machinery, or comparable high-risk work should receive independent review when practical. `@codex review` is never invoked without fresh explicit maintainer approval.
+- 受け入れ条件を満たす最小変更を選ぶ。IoT共通化、イベントバス、無用なRepository層や状態管理ライブラリなどを将来用に増やさない。
+- 変更内容に応じて`npm run check`、`npm run typecheck`、`npm run test`、`npm run build`を実施し、最終差分を自己レビューする。Azure側の変更にはbackend/infraの検証を加える。
+- 最終修正後のCI結果と対象SHAを確認する。CI・配備・本番の動作検証は別の証拠として扱い、実施していない検証を「成功」としない。
+- 自己レビュー後、認証・永続化・特権付きワークフロー・破壊的変更などの高リスク作業は可能なら独立レビューを行う。`@codex review`は実行ごとに具体的な理由を説明し、明示的な承認を得る。自動呼び出しは禁止。
+- PRには主要変更、受け入れ条件と証拠、未実施の検証、残存リスクを簡潔に記載する。

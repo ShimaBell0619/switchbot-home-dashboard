@@ -1,7 +1,7 @@
 # Foundation provenance
 
 - Adopted Foundation version: 0.10.0
-- Copied-rule/template commit: `007352e15fcc6f9620686d3b77e11e85341eac02`
+- Copied-rule/template commit: `8eb33d8aa705c78f4ad8577a15099c2c18fb2d67` (Chat・Work指針のみ選択適用、現行Foundation正式リリース後の変更を含む)
 - Reusable workflow commit: `007352e15fcc6f9620686d3b77e11e85341eac02`
 - Adopted on: 2026-09-14
 - App-specific deviations:
@@ -9,17 +9,14 @@
   - the bootstrap UI uses semantic native elements rather than importing a primitive library because no dialog/menu/form interaction currently requires one;
   - optional Fixed Staging is not adopted because the PoC has no stable non-Production origin requirement.
 
-## Adopted guidance
+## 適用した開発ガイダンス
 
-The repository derives its working rules from Foundation v0.10.0, including:
-
-- `AGENTS.md` read order, context routing, issue-driven development, approval boundaries, mandatory self-review, and independent-review policy;
-- `docs/ai-implementation.md` for Chat-based implementation;
-- `docs/ui-implementation.md` for primitive-first UI layering;
-- `docs/ui-review.md` for rendered review;
-- `docs/adoption.md` for consumer provenance and reusable CI;
-- `docs/azure-oidc.md` for GitHub Actions -> Azure OIDC trust boundaries;
-- the default Vercel Git Integration and On-demand Preview profile.
+- `AGENTS.md`のChat + GitHub標準、必要時のWork利用、Issue/PRによる引き継ぎ、承認境界、最終自己レビュー、独立レビュー方針を選択適用する。
+- 共通実装ガイドはFoundationの`docs/ai-implementation.md`、UIは`docs/ui-implementation.md`と`docs/ui-review.md`、導入元管理は`docs/adoption.md`を参照する。
+- `docs/azure-oidc.md`でGitHub Actions → Azure OIDCの信頼境界を管理し、Vercelは既存のGit IntegrationとOn-demand Preview方針を維持する。
+- 開発ルールの選択的更新だけを行い、**Foundationのリリース版はv0.10.0のまま**とする。新しい`main`の未リリース変更を正式リリース済みと誤認しない。
+- Workflowはレビュー済みv0.10.0リリースSHA（上記Reusable workflow commit）に固定したままとする。別途明示的なアップグレードがない限り書き換えない。
+- アプリ固有の製品・デザイン・Azureデータと認証境界は`PRODUCT.md`、`DESIGN.md`、`docs/ARCHITECTURE.md`を優先する。
 
 ## Hosting and deployment
 
