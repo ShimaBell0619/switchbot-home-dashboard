@@ -136,3 +136,13 @@ This repository adopts Web App Foundation v0.10.0. See `docs/FOUNDATION.md`, `PR
 - スクリーンショット、HTMLレポート、失敗時traceは3日保存のGitHub Actions Artifactへ。Chatから実行結果とArtifactを確認
 - 既存の公開Azure APIへ**読み取り専用**アクセスのみ。資格情報、Azure更新、スクリーンショット以外のセンサーデータ保持はしない
 - CI successはE2Eテストが検査する要件を証明する。実際のスマートフォン端末/ブラウザ環境を全て保証しない
+
+## Chatからの安全なブランチ削除
+
+マージ済みの同一リポジトリPRにリポジトリ所有者が正確なコメント`/cleanup-branch`を投稿すると、信頼済み`main`のGitHub Actionsが対象を検証し、PRに関連する短命ブランチだけを削除します。
+
+- `main`・`preview/**`・fork・未マージPR・別PRで使用中・SHAがマージ後に変更されたブランチは拒否
+- PRに付属する`head.sha`と現在のGit refを比較し、Git`--force-with-lease`で条件付き削除。保護規則を回避しない
+- コメント本文をShellとして解釈せず、PRコードを特権付きJobで実行しない
+- JobのTokenは`contents:write`と`pull-requests:read`に限定し、PR作業ブランチは削除依頼があるまで維持
+- 操作は取り消せないため、対象PRとブランチを指定した明示的なユーザー承認を前提とする

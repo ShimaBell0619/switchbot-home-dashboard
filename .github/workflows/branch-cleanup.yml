@@ -1,0 +1,36 @@
+name: Chat Merged Branch Cleanup
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  cleanup:
+    if: >-
+      ${{ github.event.issue.pull_request &&
+          github.event.comment.body == '/cleanup-branch' &&
+          github.event.comment.author_association == 'OWNER' }}
+    permissions:
+      contents: write
+      pull-requests: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout trusted main only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+
+      - name: Delete only an unchanged merged PR branch
+        run: node scripts/cleanup-merged-branch.mjs
