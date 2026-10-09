@@ -125,3 +125,14 @@ Home Story v0.1 deliberately stays small:
 ## Foundation
 
 This repository adopts Web App Foundation v0.10.0. See `docs/FOUNDATION.md`, `PRODUCT.md`, `DESIGN.md`, `AGENTS.md`, and `docs/ARCHITECTURE.md` before material changes.
+
+## Chatからの実画面検証
+
+このアプリは `.github/workflows/ui-review.yml` でPlaywright + Chromiumによる実レンダリングを検査します。通常のPRでUIやE2Eが変更された場合は自動実行します。**Chatから本番画面を再確認する場合は、リポジトリ所有者のIssueコメント `/ui-review`** で起動できます（Work不要）。このコメント方式は**PRでなくIssueを対象**とし、信頼済みmainのテストコードから公開画面を読み取ります。
+
+- PR側：`npm ci`→`npm run build`→ローカルのNext.jsを起動→本物のChromiumで現在のPR実装を検証
+- Issueコメント側：公開本番 `https://switchbot-home-dashboard.vercel.app` を実際のChromiumから確認
+- 320px、390px、1440pxで表示、横スクロール、主要な要素、観測7日分のDOM、Tab/Enter移動を検証
+- スクリーンショット、HTMLレポート、失敗時traceは3日保存のGitHub Actions Artifactへ。Chatから実行結果とArtifactを確認
+- 既存の公開Azure APIへ**読み取り専用**アクセスのみ。資格情報、Azure更新、スクリーンショット以外のセンサーデータ保持はしない
+- CI successはE2Eテストが検査する要件を証明する。実際のスマートフォン端末/ブラウザ環境を全て保証しない
