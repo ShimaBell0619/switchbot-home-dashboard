@@ -4,11 +4,11 @@ Foundation-Version: 0.10.0
 
 ## 役割と基本方針
 
-- **Chat + GitHub**を設計・Issue・小〜中規模の実装・PRの標準とし、**Work**は実行・画面検証・大きな変更が必要な場合に使う。
+- **Chat-first**で設計・GitHub変更・CI・実ブラウザ検証・配備・結果確認まで自律的に実施する。直接ツール、Chat実行環境、一時Sandbox、信頼済みGitHub Actionsから適切な経路を選ぶ。**Workはユーザーの明示指示がある場合のみ使用する**。
 - 作業範囲はIssueまたは合意済み依頼の受け入れ条件で決める。`PRODUCT.md`を製品仕様、`DESIGN.md`をUI・UX、`docs/ARCHITECTURE.md`を構成・データ境界の正本とする。
 - 適用元は`docs/FOUNDATION.md`に記録する。実装上の共通方針は採用済みFoundationの`AGENTS.md`と`docs/ai-implementation.md`に従う。最新の`main`が自動的に適用されるわけではない。
 - 必要な仕様だけを読み、履歴や会話全文を毎回取り込まない。意味のないContext Packet、Implementation Map、専用Skillなどを生成しない。
-- 作業開始前にベースSHAを確認し、短命ブランチで変更する。競合する書き込みやforce pushを避ける。Issue・PR・コミットSHA・CIをChatとWorkの引き継ぎに用いる。
+- 作業開始前にベースSHAを確認し、短命ブランチで変更する。競合する書き込みやforce pushを避ける。Issue・PR・コミットSHA・CI・実行IDを実行経路の引き継ぎに用いる。
 
 ## 仕様と承認境界
 
@@ -31,7 +31,7 @@ Foundation-Version: 0.10.0
 
 - `DESIGN.md`を正本とする。モバイル優先の「今日のストーリー」を中心にし、汎用管理ダッシュボードやSwitchBotアプリを模倣しない。
 - Tailwind CSSと意味のあるネイティブHTMLを優先。実際の共通操作が必要になるまでUIライブラリは追加しない。
-- UI変更時は1440px・390px・320px程度で実際にレンダリングし、日本語折り返し・はみ出し・キーボード操作・状態表現を確認する。ソースを読んだだけで表示確認済みとは報告しない。
+- UI変更時は1440px・390px・320px程度でPlaywrightなどによる実ブラウザ描画を確認する。PRのChat UI Reviewと、Issueで所有者が明示コメントする`/ui-review`を使用できる。静的モック・HTTP 200・CI成功を実画面確認と混同しない。
 - タブ、グラフ、デバイス制御、追加のコンポーネント層は現在の受け入れ条件で必要な場合のみ実装する。
 
 ## 変更と検証
