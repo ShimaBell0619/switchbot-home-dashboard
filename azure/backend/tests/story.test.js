@@ -124,3 +124,30 @@ test("no observations today remains a no-data state", () => {
   assert.equal(story.kind, "no_data");
   assert.equal(story.observations, 0);
 });
+
+test("null, boolean and textual sensor readings are not converted into invented zero measurements", () => {
+  const rows = [
+    reading("2026-09-15T01:00:00.000Z", {
+      co2: null,
+      temperature: null,
+      humidity: true,
+    }),
+    reading("2026-09-15T01:05:00.000Z", {
+      co2: "720",
+      temperature: "24.5",
+      humidity: "52",
+    }),
+    reading("2026-09-15T01:10:00.000Z", {
+      co2: 710,
+      temperature: 24.5,
+      humidity: 52,
+    }),
+  ];
+  const story = createHomeStory(rows, now);
+
+  assert.equal(story.kind, "calm");
+  assert.deepEqual(story.stats.co2, { min: 710, max: 710 });
+  assert.deepEqual(story.stats.temperature, { min: 24.5, max: 24.5 });
+  assert.deepEqual(story.stats.humidity, { min: 52, max: 52 });
+  assert.equal(story.events.length, 0);
+});

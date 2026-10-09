@@ -40,8 +40,8 @@ function filterTodayReadings(rows, nowMs = Date.now()) {
 }
 
 function finiteMetric(reading, key) {
-  const value = Number(reading?.[key]);
-  return Number.isFinite(value) ? value : null;
+  const value = reading?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function metricPoints(readings, key) {
