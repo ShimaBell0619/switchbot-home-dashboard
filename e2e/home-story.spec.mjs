@@ -42,6 +42,7 @@ test("trends show stored observations and support keyboard navigation", async ({
   expect(response?.status()).toBe(200);
   await expect(page.getByRole("heading", { name: "この7日間の記録" })).toBeVisible();
   await expect(page.getByText(/7日間のうち\d日で観測/)).toBeVisible();
+  await expect(page.getByRole("status")).not.toContainText("$");
   await expect(page.locator("main ol > li")).toHaveCount(7);
 
   await page.keyboard.press("Tab");

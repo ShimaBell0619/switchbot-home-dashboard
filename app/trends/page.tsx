@@ -57,7 +57,7 @@ export default async function TrendsPage() {
       {state.kind === "ready" ? (
         <>
           <p className="mt-7 text-sm text-muted" role="status">
-            7日間のうち${state.data.observedDays}日で観測 · 計${state.data.totalObservations}件
+            7日間のうち{state.data.observedDays}日で観測 · 計{state.data.totalObservations}件
           </p>
           <ol className="mt-9 divide-y divide-border border-t border-b border-border">
             {[...state.data.days].reverse().map((day) => (
