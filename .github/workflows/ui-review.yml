@@ -1,0 +1,69 @@
+name: Chat UI Review
+
+on:
+  pull_request:
+    paths:
+      - "app/**"
+      - "lib/**"
+      - "e2e/**"
+      - "playwright.config.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/ui-review.yml"
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  playwright:
+    if: >-
+      ${{ github.event_name == 'pull_request' ||
+          (github.event_name == 'issue_comment' &&
+           !github.event.issue.pull_request &&
+           github.event.comment.body == '/ui-review' &&
+           github.event.comment.author_association == 'OWNER') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Reproducible install
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Chromium and system dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Build Next.js for PR tests
+        if: ${{ github.event_name == 'pull_request' }}
+        run: npm run build
+
+      - name: Run rendered UI tests
+        env:
+          UI_REVIEW_BASE_URL: ${{ github.event_name == 'issue_comment' && 'https://switchbot-home-dashboard.vercel.app' || '' }}
+        run: npm run test:e2e
+
+      - name: Upload browser review evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ui-review-${{ github.run_id }}
+          path: |
+            screenshots/
+            playwright-report/
+            test-results/
+          retention-days: 3
+          if-no-files-found: warn
