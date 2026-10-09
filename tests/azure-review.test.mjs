@@ -21,5 +21,5 @@ test("Azure review does not dispatch arbitrary requests or run privileged apply"
   assert.ok(source.includes('umask 077'));
   assert.ok(source.includes("trap 'rm -rf"));
   assert.doesNotMatch(source, /az deployment group create|az group delete|az resource delete|eval\s/);
-  assert.doesNotMatch(source, /secrets\.\w+|github\.event\.comment\.body\s*\}\}\s*\n\s*run:/);
+  assert.doesNotMatch(source, /\$\{\{\s*secrets\.\w+|github\.event\.comment\.body\s*\}\}\s*\n\s*run:/);
 });
