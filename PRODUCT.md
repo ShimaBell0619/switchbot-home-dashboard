@@ -46,9 +46,9 @@ Primary jobs:
 - Webhook ingestion;
 - authentication or multi-user accounts;
 - LLM-generated summaries;
-- graph-heavy analytics dashboards;
+- graph-heavy analytics dashboards (compact factual daily summaries are permitted);
 - multi-room or multi-device information architecture;
-- `今日 / 傾向` tabs before the trend experience has real content and an approved design;
+- speculative trend insights, unobserved metric values, or multi-device comparisons;
 - importing existing SwitchBot app history;
 - broad smart-home vendor support.
 
@@ -63,7 +63,19 @@ Home Story is successful when:
 - the production mobile UI is centered on the daily narrative, not raw metric cards or history tables;
 - the browser still reads application-owned backend data and never calls SwitchBot directly.
 
-## 7. Evolution rules
+## 7. 直近7日間の傾向（Issue #25）
+
+- 「今日」のHome Storyを主画面のまま維持し、専用の「7日間」画面を加える。
+- 日本時間の今日を含む直近7暦日について、日ごとの観測数・CO₂最高値・温度/湿度の観測範囲を表示する。
+- 日付をまたぐ値の混在を避け、今日を未完了日として明示する。
+- 欠測日・CO₂未対応の古いレコードはゼロとして補わず、「データなし」「記録なし」と区別する。
+- 値は保存済みの有効な観測から決定論的に集計し、原因や換気・在宅などを推測しない。
+- 1日最大288件の現在用クエリを7日分として流用しない。継続トークンに対応した上限付き取得を用い、不完全な取得を成功扱いしない。
+- 既存の公開HTTP APIに7日分の日別集計のみを返す新しい読み取り経路を追加する。Table SASと生の時系列レコードはブラウザへ渡さない。
+- 新しいAPIを利用できる状態を本番で確認するまでは、7日間の画面を「準備中」と表示できるようにする。既存の「今日」は変更しない。
+- APIの本番展開は権限を持つオーナーの承認済みデプロイ操作と検証を要する。
+
+## 8. Evolution rules
 
 - New story claims require a data source that can support the claim.
 - Trend views should be added only after enough persisted data exists to make comparisons useful.

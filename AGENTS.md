@@ -13,7 +13,7 @@ Foundation-Version: 0.10.0
 ## 仕様と承認境界
 
 - 既定の経路は **SwitchBot Open API → Azure Container Appsの5分間隔Job → Azure Table Storage → Next.js/Vercelサーバー → ブラウザ**。
-- 現在、Issue #21の安全な切替が完了するまでは旧Azure HTTP APIをフォールバックとして維持する。**本番直接読み取りの検証前に旧APIを削除しない。**
+- 現行本番はAzure HTTP APIを使う。Issue #21の直接Table読取への移行は保留・任意であり、機能開発の前提にしない。**必要性の確認と本番検証なしにHTTP APIを削除しない。**
 - Storage以外への永続化先変更、デバイス制御、認証認可方式、新しい機密データ、破壊的移行、データ保持・削除、追加課金のある構成変更は事前承認を要する。
 - 権限境界・公開API・本番配備方式の実質的変更も事前承認を要する。既存の動作を保つ局所的な修正やテスト追加は承認済み範囲で進めてよい。
 - SwitchBot Token/Secret、Table SAS、Azureの特権資格情報をリポジトリ・ログ・ブラウザ・応答・Preview環境へ露出しない。`NEXT_PUBLIC_*`に秘密を入れない。

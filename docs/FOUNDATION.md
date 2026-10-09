@@ -25,7 +25,7 @@
 - The approved Issue #21 target reads Azure Table Storage directly from the Next.js server runtime; browser code never receives Azure Table credentials.
 - `AZURE_HISTORY_TABLE_SAS` is a server-only read credential and must be configured as a Sensitive Production environment variable in Vercel. It is never committed to `vercel.json` or repository files.
 - `AZURE_STORAGE_ACCOUNT_NAME`, `AZURE_HISTORY_TABLE_NAME`, and `SWITCHBOT_DEVICE_ID` are server-side direct-read settings. The device ID must not be logged or browser-exposed even though it is not an authentication secret.
-- During the Issue #21 cutover only, `AZURE_BACKEND_BASE_URL` remains as a rollback fallback until Production direct Table reads are verified.
+- Production currently uses `AZURE_BACKEND_BASE_URL` to reach the Azure Container App read API. Direct Table reading is optional, and Issue #21 is on hold rather than a prerequisite for new features.
 - Fixed Staging is not adopted.
 - Production credentials and privileged Azure state must not be made available to Preview PR code.
 

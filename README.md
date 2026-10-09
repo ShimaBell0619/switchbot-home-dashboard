@@ -16,7 +16,7 @@ SwitchBot Open API
   -> Home Story UI
 ```
 
-Issue #21 is a rollback-safe cutover from the previous Container App read API. When the direct Table settings are configured, Next.js reads `SensorReadings` directly; until Production verification is complete, `AZURE_BACKEND_BASE_URL` remains as a temporary fallback.
+現行の本番環境ではContainer AppsのHTTP APIを利用しています。Next.jsからTable Storageを直接読むコードも用意されていますが、Issue #21の移行は必須ではなく保留中です。必要性と本番検証が明確になるまで `AZURE_BACKEND_BASE_URL` の経路を維持します。
 
 The browser never calls SwitchBot or Azure Table Storage directly. A slow or unavailable upstream SwitchBot API therefore does not block reading already-stored observations.
 
@@ -39,6 +39,12 @@ For the selected `MeterPro(CO2)`, observations persist:
 - observation/collection timestamps.
 
 Older rows without CO₂ remain valid while new CO₂-enabled observations accumulate.
+
+## 直近7日間の傾向（Issue #25）
+
+`/trends` から日本時間の直近7日について、観測数・CO₂最高値・温度と湿度の観測範囲を確認できます。「今日」のHome Storyは変えません。欠測日やCO₂未記録日をゼロで補いません。
+
+新しい集計は既存Azure Container Appの `GET /api/trends` が担当し、Vercelサーバーは日別の集計結果だけを取得します。**Azure側のバックエンドイメージを信頼されたデプロイフローで更新し、動作を確認するまでは「準備中」と表示されます。** アプリのデプロイ成功だけではバックエンド更新済みとはなりません。
 
 ## Development
 

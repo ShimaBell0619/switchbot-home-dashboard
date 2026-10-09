@@ -6,7 +6,7 @@ The architecture PoC is proven: SwitchBot environmental readings can be collecte
 
 The current product layer adds **Home Story** on top of that path. Home Story deterministically reduces the current JST calendar day's stored observations into a small factual narrative for the mobile UI.
 
-Issue #21 simplifies the read path by removing the scale-to-zero Azure Container App HTTP API. The Next.js server runtime reads the persisted Table Storage history directly with a read-only table-scoped SAS. Browser code still receives neither Azure credentials nor direct Table access.
+Current Production reads Home Story through the scale-to-zero Azure Container App HTTP API. Next.js also contains an optional direct Table-read path, but Issue #21 is on hold: it is not a prerequisite for developing new features. The browser never receives Azure credentials or accesses Table Storage directly.
 
 ## Approved target topology
 
@@ -89,7 +89,16 @@ The direct read path preserves the existing semantics:
 
 No public Azure read API is required in the target topology.
 
-### Home Story engine
+### Seven-day trends (Issue #25)
+
+- The existing public Azure Container App read API gains `GET /api/trends`, returning a fixed seven-JST-calendar-day **daily aggregate** (observation counts, CO₂ peak, temperature/humidity ranges) rather than raw readings or credentials.
+- It reuses the scheduled collector, `SensorReadings` table, read-only Table SAS and existing public low-sensitivity environmental-data boundary. The existing `/api/story`, `/api/history`, and Next.js direct/legacy fallback behavior remain unchanged.
+- The seven-day query filters by the single device PartitionKey and inverted RowKey cutoff, follows Azure Table continuation tokens, and stops with a backend error when the row/page budget is exceeded. Partial aggregates are never labeled successful.
+- The Next.js `/trends` server-rendered page calls the backend API and exposes only summary metrics to the browser. It renders an unavailable state until the owner-authorized Azure deployment introduces the endpoint.
+- Day boundaries use JST, today is partial, absent observations are distinct from zero, and old rows without CO₂ do not fabricate CO₂ statistics.
+- The deployment and public-read API review remain explicit; **merging web changes or a READY Vercel deployment does not prove the Azure backend has been updated**.
+
+## Home Story engine
 
 The shared deterministic story logic owns story selection. It does not use an LLM.
 

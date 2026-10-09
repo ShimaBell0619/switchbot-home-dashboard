@@ -28,6 +28,7 @@ test("HTTP runtime preserves API routing and history query", async () => {
   };
   const handler = createRequestHandler({
     latestHandler: response({ route: "latest" }),
+    trendsHandler: response({ route: "trends" }),
     storyHandler: response({ route: "story" }),
     historyHandler: async (context, req) => {
       historyWindow = req.query.window;
@@ -47,6 +48,10 @@ test("HTTP runtime preserves API routing and history query", async () => {
     const history = await fetch(`${baseUrl}/api/history?window=6h`);
     assert.equal(history.status, 200);
     assert.equal(historyWindow, "6h");
+
+    const trends = await fetch(`${baseUrl}/api/trends`);
+    assert.equal(trends.status, 200);
+    assert.deepEqual(await trends.json(), { route: "trends" });
 
     const missing = await fetch(`${baseUrl}/missing`);
     assert.equal(missing.status, 404);

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getDashboardState, type StoryMetricRange } from "@/lib/backend";
 
 export const dynamic = "force-dynamic";
@@ -57,8 +58,14 @@ export default async function Home() {
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-xl px-5 py-10 sm:px-8 sm:py-14">
-      <header>
+      <header className="flex items-center justify-between gap-5">
         <p className="text-sm font-medium tracking-wide text-muted">Home</p>
+        <nav aria-label="表示期間" className="flex items-center gap-4 text-sm">
+          <span aria-current="page" className="font-semibold">今日</span>
+          <Link href="/trends" className="text-muted underline-offset-4 hover:underline focus-visible:underline">
+            7日間
+          </Link>
+        </nav>
       </header>
 
       {state.kind === "web_not_configured" ? (

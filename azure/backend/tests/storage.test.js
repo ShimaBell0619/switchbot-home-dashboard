@@ -4,6 +4,7 @@ const test = require("node:test");
 const {
   historyRowKey,
   queryRecentEntities,
+  querySevenDayEntities,
   saveReading,
 } = require("../shared/table-storage");
 
@@ -72,4 +73,80 @@ test("history storage query is capped at 288 rows regardless of a larger request
   const url = new URL(requestedUrl);
   assert.equal(url.searchParams.get("$top"), "288");
   assert.equal(url.searchParams.get("$filter"), "PartitionKey eq 'ABC123'");
+});
+
+test("seven-day query paginates and bounds history with the inverted RowKey", async () => {
+  const requests = [];
+  const sinceMs = Date.parse("2026-10-03T15:00:00.000Z");
+  const nowMs = Date.parse("2026-10-10T03:00:00.000Z");
+  const fetchImpl = async (url) => {
+    requests.push(new URL(String(url)));
+    if (requests.length === 1) {
+      return new Response(JSON.stringify({
+        value: [{ observedAt: "2026-10-04T00:00:00.000Z", co2: 600 }],
+      }), {
+        status: 200,
+        headers: {
+          "x-ms-continuation-nextpartitionkey": "ABC123",
+          "x-ms-continuation-nextrowkey": "next-row",
+        },
+      });
+    }
+    return new Response(JSON.stringify({
+      value: [
+        { observedAt: "2026-10-10T01:00:00.000Z", co2: 700 },
+        { observedAt: "2026-10-03T14:59:59.000Z", co2: 900 },
+      ],
+    }));
+  };
+  const rows = await querySevenDayEntities({
+    accountName: config.accountName,
+    tableName: config.historyTableName,
+    sas: config.historyTableSas,
+    partitionKey: "ABC123",
+    sinceMs,
+    nowMs,
+    fetchImpl,
+  });
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].searchParams.get("$top"), "1000");
+  assert.match(requests[0].searchParams.get("$filter"), /PartitionKey eq 'ABC123' and RowKey le '\d{13}'/);
+  assert.equal(requests[1].searchParams.get("NextPartitionKey"), "ABC123");
+  assert.equal(requests[1].searchParams.get("NextRowKey"), "next-row");
+  assert.deepEqual(rows.map((row) => row.co2), [600, 700]);
+});
+
+test("seven-day query does not return a truncated aggregate when too many readings exist", async () => {
+  await assert.rejects(
+    querySevenDayEntities({
+      accountName: config.accountName,
+      tableName: config.historyTableName,
+      sas: config.historyTableSas,
+      partitionKey: "ABC123",
+      sinceMs: Date.parse("2026-10-03T15:00:00.000Z"),
+      nowMs: Date.parse("2026-10-10T03:00:00.000Z"),
+      fetchImpl: async () => new Response(JSON.stringify({ value: Array.from({ length: 2301 }, () => ({ observedAt: "2026-10-10T00:00:00Z" })) })),
+    }),
+    /bounded observation limit/,
+  );
+});
+
+test("seven-day query rejects repeated continuation tokens", async () => {
+  await assert.rejects(
+    querySevenDayEntities({
+      accountName: config.accountName,
+      tableName: config.historyTableName,
+      sas: config.historyTableSas,
+      partitionKey: "ABC123",
+      sinceMs: Date.parse("2026-10-03T15:00:00.000Z"),
+      nowMs: Date.parse("2026-10-10T03:00:00.000Z"),
+      fetchImpl: async () => new Response(JSON.stringify({ value: [] }), {
+        headers: {
+          "x-ms-continuation-nextpartitionkey": "ABC123",
+          "x-ms-continuation-nextrowkey": "same",
+        },
+      }),
+    }),
+    /continuation token repeated/,
+  );
 });
