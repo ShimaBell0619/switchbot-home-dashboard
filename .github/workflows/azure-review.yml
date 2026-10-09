@@ -1,0 +1,104 @@
+name: Chat Azure Read / What-if
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+concurrency:
+  group: chat-azure-review
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    if: >-
+      ${{ github.event.issue.number == 32 &&
+          !github.event.issue.pull_request &&
+          github.event.comment.author_association == 'OWNER' &&
+          (github.event.comment.body == '/azure-inventory' ||
+           github.event.comment.body == '/azure-what-if') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_CLIENT_ID: 803efb43-a00d-4113-8020-8c88996c7841
+      AZURE_TENANT_ID: 68bc9518-b4ee-443a-abbf-9a642a0a8735
+      AZURE_SUBSCRIPTION_ID: 82615ba2-5bd4-401d-b054-50df1e0e0333
+      RESOURCE_GROUP: rg-switchbot-poc-jpe-01
+      COLLECTOR_JOB_NAME: caj-switchbot-collector-jpe-01
+      REQUEST: ${{ github.event.comment.body }}
+    steps:
+      - name: Checkout trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Sign in to Azure with OIDC
+        uses: Azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: List existing resources without secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          az resource list --resource-group "$RESOURCE_GROUP" \
+            --query '[].type' --output json > /tmp/resource-types.json
+          echo "### Azure resource inventory" >> "$GITHUB_STEP_SUMMARY"
+          echo "Scope: reviewed resource group only" >> "$GITHUB_STEP_SUMMARY"
+          echo "Total: $(jq 'length' /tmp/resource-types.json)" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Resource types and counts:' >> "$GITHUB_STEP_SUMMARY"
+          jq -r 'sort | group_by(.)[] | "- \(.[0]): \(length)"' /tmp/resource-types.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Container Apps extension for fixed What-if parameters
+        if: ${{ github.event.comment.body == '/azure-what-if' }}
+        run: az extension add --name containerapp --upgrade --only-show-errors
+
+      - name: Evaluate fixed Bicep What-if without publishing secrets
+        if: ${{ github.event.comment.body == '/azure-what-if' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          temp_dir="$(mktemp -d)"
+          trap 'rm -rf "$temp_dir"' EXIT
+          az containerapp job secret list \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$COLLECTOR_JOB_NAME" \
+            --show-values --output json > "$temp_dir/job-secrets.json"
+          image="$(az containerapp job show \
+            --resource-group "$RESOURCE_GROUP" --name "$COLLECTOR_JOB_NAME" \
+            --query 'properties.template.containers[0].image' --output tsv)"
+          token="$(jq -r '[.[]|select(.name=="switchbot-token")][0].value // empty' "$temp_dir/job-secrets.json")"
+          secret="$(jq -r '[.[]|select(.name=="switchbot-secret")][0].value // empty' "$temp_dir/job-secrets.json")"
+          device_id="$(jq -r '[.[]|select(.name=="switchbot-device-id")][0].value // empty' "$temp_dir/job-secrets.json")"
+          if [[ -z "$image" || "$image" == "None" || -z "$token" || -z "$secret" || -z "$device_id" ]]; then
+            echo "::error::Existing deployment parameters are not available for an accurate What-if."
+            exit 1
+          fi
+          for value in "$token" "$secret" "$device_id"; do echo "::add-mask::$value"; done
+          jq -n --arg image "$image" --arg token "$token" --arg secret "$secret" --arg device "$device_id" \
+            '{containerImage:{value:$image},switchBotToken:{value:$token},switchBotSecret:{value:$secret},switchBotDeviceId:{value:$device}}' \
+            > "$temp_dir/params.json"
+
+          # No create/apply/delete. ResourceIdOnly prevents the output from containing secret-bearing property diffs.
+          az deployment group what-if \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters @"$temp_dir/params.json" \
+            --mode Incremental \
+            --result-format ResourceIdOnly \
+            --validation-level ProviderNoRbac \
+            --no-pretty-print --output json > "$temp_dir/what-if.json"
+          echo '### Azure What-if (no resources changed)' >> "$GITHUB_STEP_SUMMARY"
+          echo "Template: trusted main infra/main.bicep" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Predicted change counts (not guaranteed actual outcome):' >> "$GITHUB_STEP_SUMMARY"
+          jq -r '[(.properties.changes // .changes // [])[] | .changeType] | sort | group_by(.)[] | "- \(.[0]): \(length)"' \
+            "$temp_dir/what-if.json" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Secret values, resource property payloads and raw What-if output are intentionally not published.' >> "$GITHUB_STEP_SUMMARY"

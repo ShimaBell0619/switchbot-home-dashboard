@@ -146,3 +146,10 @@ This repository adopts Web App Foundation v0.10.0. See `docs/FOUNDATION.md`, `PR
 - コメント本文をShellとして解釈せず、PRコードを特権付きJobで実行しない
 - JobのTokenは`contents:write`と`pull-requests:read`に限定し、PR作業ブランチは削除依頼があるまで維持
 - 操作は取り消せないため、対象PRとブランチを指定した明示的なユーザー承認を前提とする
+
+## ChatによるAzureの参照とWhat-if（2026-10-10）
+
+- `/azure-inventory`：**Issue #32**に所有者が正確なコメントを投稿すると、信頼済み`main`からGitHub OIDC経由で既存の`rg-switchbot-poc-jpe-01`だけを参照します。GitHub ActionsのSummaryにはリソースの**種類と件数**のみ出力します。
+- `/azure-what-if`：同じIssue・所有者チェックで、既存のJobのデプロイパラメータをAzure側から取得し、`infra/main.bicep`の`az deployment group what-if`を実行します。**実リソースの作成・変更・削除は行いません**。生の差分、秘密情報、デバイスIDは公開せず、変更種類別件数のみを記録します。
+- What-ifは読み取り中心ですが`Microsoft.Resources/deployments/whatIf/action`等のAzure RBAC要件があり、`Reader`だけで成功するとは限りません。実操作権限を狭めるのは別途Azure管理側で実施します。
+- `/deploy-azure`は別の承認対象（Issue #15）であり、操作を相互に置き換えません。任意の`az`コマンドやユーザー指定のSubscription/RGをコメントで受け取る仕組みは採用しません。
