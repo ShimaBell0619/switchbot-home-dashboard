@@ -54,7 +54,7 @@ jobs:
           echo "Scope: reviewed resource group only" >> "$GITHUB_STEP_SUMMARY"
           echo "Total: $(jq 'length' /tmp/resource-types.json)" >> "$GITHUB_STEP_SUMMARY"
           echo 'Resource types and counts:' >> "$GITHUB_STEP_SUMMARY"
-          jq -r 'sort | group_by(.)[] | "- \\(.[0]): \\(length)"' /tmp/resource-types.json >> "$GITHUB_STEP_SUMMARY"
+          jq -r 'sort | group_by(.)[] | "- \(.[0]): \(length)"' /tmp/resource-types.json >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install Container Apps extension for fixed What-if parameters
         if: ${{ github.event.comment.body == '/azure-what-if' }}
@@ -99,6 +99,6 @@ jobs:
           echo '### Azure What-if (no resources changed)' >> "$GITHUB_STEP_SUMMARY"
           echo "Template: trusted main infra/main.bicep" >> "$GITHUB_STEP_SUMMARY"
           echo 'Predicted change counts (not guaranteed actual outcome):' >> "$GITHUB_STEP_SUMMARY"
-          jq -r '[(.properties.changes // .changes // [])[] | .changeType] | sort | group_by(.)[] | "- \\(.[0]): \\(length)"' \
+          jq -r '[(.properties.changes // .changes // [])[] | .changeType] | sort | group_by(.)[] | "- \(.[0]): \(length)"' \
             "$temp_dir/what-if.json" >> "$GITHUB_STEP_SUMMARY"
           echo 'Secret values, resource property payloads and raw What-if output are intentionally not published.' >> "$GITHUB_STEP_SUMMARY"
